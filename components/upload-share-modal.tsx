@@ -12,6 +12,7 @@ import {
   AlertCircle,
   FolderPlus,
   Folder,
+  FolderCheck,
 } from 'lucide-react';
 import {
   ModuleType,
@@ -97,7 +98,7 @@ export function UploadShareModal({
       incomingShareDraft?.suggestedAlbumId ||
       (defaultAlbumId && defaultAlbumId !== 'all' ? defaultAlbumId : albums[0]?.id || '');
     setSelectedAlbumId(initialAlbId);
-    setShowNewAlbumInput(albums.length === 0);
+    setShowNewAlbumInput(destinationMode === 'choose' && albums.length === 0);
 
     if (incomingShareDraft) {
       setTitle(incomingShareDraft.title || '');
@@ -193,7 +194,7 @@ export function UploadShareModal({
     setFileSize(file.size);
     setMimeType(file.type || 'application/octet-stream');
 
-    if (resolvedModule === 'photos' && albums.length === 0) {
+    if (destinationMode === 'choose' && resolvedModule === 'photos' && albums.length === 0) {
       setShowNewAlbumInput(true);
     }
 
@@ -368,10 +369,22 @@ export function UploadShareModal({
 
   const fixedAlbumSelected =
     destinationMode === 'fixed' && selectedModule === 'photos' && Boolean(defaultAlbumId);
+  // Destination questions (module + album) are asked ONLY when a file is shared
+  // in from the phone ('choose'). Uploading from inside the app saves silently
+  // to the module (and album, when one is open) the user is already viewing.
   const showAlbumPicker =
+    destinationMode === 'choose' &&
     selectedModule === 'photos' &&
-    !fixedAlbumSelected &&
-    (destinationMode !== 'auto' || autoDestinationResolved);
+    !fixedAlbumSelected;
+  const fixedAlbumName = albums.find((a) => a.id === defaultAlbumId)?.name;
+  const destinationHint =
+    destinationMode === 'choose'
+      ? null
+      : destinationMode === 'auto' && !autoDestinationResolved
+      ? 'סוג הקובץ יזוהה אוטומטית בעת הבחירה'
+      : `יישמר ב: ${MODULE_META[selectedModule].label}${
+          fixedAlbumSelected && fixedAlbumName ? ` · אלבום ${fixedAlbumName}` : ''
+        }`;
   const titleStepNumber = destinationMode === 'choose' ? 3 : 2;
   const acceptedFileTypes =
     destinationMode === 'fixed' ? MODULE_META[defaultModule].acceptAttr : undefined;
@@ -390,21 +403,29 @@ export function UploadShareModal({
         </div>
 
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-white/[0.06]">
-          <h2
-            id="upload-share-modal-title"
-            className="text-xl font-bold tracking-tight text-slate-50"
-          >
-            העלאת קובץ חדש
-          </h2>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="סגירה"
-            className="w-11 h-11 flex items-center justify-center rounded-2xl glass text-slate-400 hover:text-white hover:bg-white/10 active:scale-95 transition cursor-pointer"
-          >
-            <X className="w-5 h-5" />
-          </button>
+        <div className="px-6 py-4 border-b border-white/[0.06]">
+          <div className="flex items-center justify-between gap-3">
+            <h2
+              id="upload-share-modal-title"
+              className="text-xl font-bold tracking-tight text-slate-50"
+            >
+              העלאת קובץ חדש
+            </h2>
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="סגירה"
+              className="w-11 h-11 flex items-center justify-center rounded-2xl glass text-slate-400 hover:text-white hover:bg-white/10 active:scale-95 transition cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+          {destinationHint && (
+            <div className="mt-3 inline-flex items-center gap-2 rounded-xl bg-mint-400/10 border border-mint-400/20 px-3 py-1.5 text-xs font-semibold text-mint-200">
+              <FolderCheck className="w-3.5 h-3.5 text-mint-400 shrink-0" />
+              <span>{destinationHint}</span>
+            </div>
+          )}
         </div>
 
         {/* 3-Step Form */}
