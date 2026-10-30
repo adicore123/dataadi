@@ -2,7 +2,7 @@ import type { Metadata, Viewport } from 'next';
 import './globals.css';
 
 export const viewport: Viewport = {
-  themeColor: '#060B16',
+  themeColor: '#F4F8FB',
   width: 'device-width',
   initialScale: 1,
   viewportFit: 'cover',
@@ -14,7 +14,7 @@ export const metadata: Metadata = {
     'מערכת ניהול פשוטה בסגנון CRM להעלאה, שיתוף מהמובייל ותיעוד אוטומטי לפי תאריך ושעה של מסמכים חשובים, תמונות והקלטות קוליות.',
   appleWebApp: {
     capable: true,
-    statusBarStyle: 'black-translucent',
+    statusBarStyle: 'default',
     title: 'כספת ניהול',
   },
   icons: {
@@ -43,7 +43,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="he" dir="rtl">
       <body
         suppressHydrationWarning
-        className="aurora-canvas min-h-screen text-slate-100 antialiased font-sans selection:bg-mint-500 selection:text-[#041014]"
+        className="aurora-canvas min-h-screen text-slate-800 antialiased font-sans selection:bg-mint-500 selection:text-white"
       >
         {children}
       </body>

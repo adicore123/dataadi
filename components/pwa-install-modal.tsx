@@ -28,7 +28,7 @@ export function PwaInstallModal({
       role="dialog"
       aria-modal="true"
       aria-labelledby="pwa-modal-title"
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-vault-950/70 backdrop-blur-sm p-0 sm:p-4"
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-900/40 backdrop-blur-sm p-0 sm:p-4"
     >
       <div className="w-full max-w-lg rounded-t-4xl sm:rounded-4xl glass-strong shadow-2xl overflow-hidden max-h-[92vh] flex flex-col">
         {/* Sheet handle (mobile affordance) */}
@@ -37,14 +37,14 @@ export function PwaInstallModal({
         </div>
 
         {/* Header */}
-        <div className="flex items-center justify-between gap-3 px-6 py-4 border-b border-white/[0.06]">
+        <div className="flex items-center justify-between gap-3 px-6 py-4 border-b border-slate-900/[0.08]">
           <div className="flex items-center gap-2.5 min-w-0">
-            <span className="flex items-center justify-center w-9 h-9 rounded-xl bg-gradient-to-br from-mint-400/25 to-teal-400/10 text-mint-300 shrink-0">
+            <span className="flex items-center justify-center w-9 h-9 rounded-xl bg-gradient-to-br from-mint-500/20 to-teal-500/10 text-mint-600 shrink-0">
               <Smartphone className="w-[18px] h-[18px]" />
             </span>
             <h2
               id="pwa-modal-title"
-              className="text-base font-bold tracking-tight text-slate-50 leading-snug"
+              className="text-base font-bold tracking-tight text-slate-900 leading-snug"
             >
               שמירה כאפליקציית Web למובייל ושיתוף מהיר
             </h2>
@@ -53,7 +53,7 @@ export function PwaInstallModal({
             type="button"
             onClick={onClose}
             aria-label="סגירת חלון אפליקציית מובייל"
-            className="w-11 h-11 flex items-center justify-center rounded-2xl glass text-slate-400 hover:text-white hover:bg-white/10 active:scale-95 transition cursor-pointer shrink-0"
+            className="w-11 h-11 flex items-center justify-center rounded-2xl glass text-slate-500 hover:text-slate-900 hover:bg-slate-900/5 active:scale-95 transition cursor-pointer shrink-0"
           >
             <X className="w-5 h-5" />
           </button>
@@ -72,11 +72,11 @@ export function PwaInstallModal({
                 src="/pwa-512x512.png"
                 alt="אייקון מעוצב של כספת ניהול"
                 referrerPolicy="no-referrer"
-                className="w-16 h-16 rounded-2xl shadow-glow ring-1 ring-white/10 shrink-0"
+                className="w-16 h-16 rounded-2xl shadow-glow ring-1 ring-slate-900/10 shrink-0"
               />
               <div className="space-y-1 min-w-0">
-                <div className="text-sm font-bold text-slate-50">כספת ניהול</div>
-                <p className="text-xs text-slate-400 leading-relaxed">
+                <div className="text-sm font-bold text-slate-900">כספת ניהול</div>
+                <p className="text-xs text-slate-500 leading-relaxed">
                   האייקון המעוצב מופיע אוטומטית על מסך הבית בטלפון (אייפון או
                   אנדרואיד) ונפתח במסך מלא בדיוק כמו אפליקציה טבעית.
                 </p>
@@ -96,8 +96,8 @@ export function PwaInstallModal({
           )}
 
           {isInstalled && (
-            <div className="p-3.5 rounded-2xl bg-mint-400/10 border border-mint-400/25 text-xs font-semibold text-mint-200 flex items-center gap-2">
-              <Check className="w-4 h-4 text-mint-400 shrink-0" />
+            <div className="p-3.5 rounded-2xl bg-mint-500/10 border border-mint-500/30 text-xs font-semibold text-mint-700 flex items-center gap-2">
+              <Check className="w-4 h-4 text-mint-600 shrink-0" />
               <span>האפליקציה כבר מותקנת ופועלת במצב Web App עצמאי!</span>
             </div>
           )}
@@ -105,17 +105,17 @@ export function PwaInstallModal({
           {/* Instructions for iOS & Android */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="p-4 rounded-2xl glass space-y-2">
-              <h3 className="text-xs font-bold text-slate-100">
+              <h3 className="text-xs font-bold text-slate-900">
                 באייפון (Safari - iOS):
               </h3>
-              <ol className="text-xs text-slate-400 space-y-1.5 list-decimal list-inside leading-relaxed">
+              <ol className="text-xs text-slate-500 space-y-1.5 list-decimal list-inside leading-relaxed">
                 <li>
-                  לחץ על כפתור ה-<strong className="text-slate-200">שיתוף (Share)</strong>{' '}
+                  לחץ על כפתור ה-<strong className="text-slate-700">שיתוף (Share)</strong>{' '}
                   בתחתית הדפדפן.
                 </li>
                 <li>
                   גלול ובחר{' '}
-                  <strong className="text-slate-200">
+                  <strong className="text-slate-700">
                     &quot;הוסף למסך הבית&quot; (Add to Home Screen)
                   </strong>
                   .
@@ -125,16 +125,16 @@ export function PwaInstallModal({
             </div>
 
             <div className="p-4 rounded-2xl glass space-y-2">
-              <h3 className="text-xs font-bold text-slate-100">
+              <h3 className="text-xs font-bold text-slate-900">
                 באנדרואיד (Chrome):
               </h3>
-              <ol className="text-xs text-slate-400 space-y-1.5 list-decimal list-inside leading-relaxed">
+              <ol className="text-xs text-slate-500 space-y-1.5 list-decimal list-inside leading-relaxed">
                 <li>לחץ על תפריט שלוש הנקודות בראש הדפדפן.</li>
                 <li>
                   בחר{' '}
-                  <strong className="text-slate-200">&quot;התקן אפליקציה&quot;</strong>{' '}
+                  <strong className="text-slate-700">&quot;התקן אפליקציה&quot;</strong>{' '}
                   או{' '}
-                  <strong className="text-slate-200">&quot;הוסף למסך הבית&quot;</strong>.
+                  <strong className="text-slate-700">&quot;הוסף למסך הבית&quot;</strong>.
                 </li>
                 <li>לאחר ההתקנה, האפליקציה תופיע גם בתפריט השיתוף של הטלפון!</li>
               </ol>
@@ -143,14 +143,14 @@ export function PwaInstallModal({
 
           {/* Mobile Share Explanation */}
           <div className="p-4 rounded-2xl glass space-y-3">
-            <div className="flex items-center gap-2 text-xs font-bold text-slate-100">
-              <Share2 className="w-4 h-4 text-mint-400" />
+            <div className="flex items-center gap-2 text-xs font-bold text-slate-900">
+              <Share2 className="w-4 h-4 text-mint-600" />
               <span>שיתוף מהיר מהמובייל לתוך המודולים:</span>
             </div>
-            <p className="text-xs text-slate-400 leading-relaxed">
+            <p className="text-xs text-slate-500 leading-relaxed">
               כאשר שומרים את האפליקציה לנייד, ניתן לשתף כל מסמך מוואטסאפ, תמונה
               מהגלריה או הקלטה קולית ישירות ל{' '}
-              <strong className="text-slate-200">כספת ניהול</strong>, לבחור לאיזה
+              <strong className="text-slate-700">כספת ניהול</strong>, לבחור לאיזה
               מודול זה יגיע (מסמכים, תמונות או הקלטות) ולתת כותרת עם תיעוד תאריך
               ושעה אוטומטי.
             </p>

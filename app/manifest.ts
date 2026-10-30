@@ -28,7 +28,7 @@ export default function manifest(): MetadataRoute.Manifest & {
     dir: 'rtl',
     lang: 'he',
     background_color: '#F8FAFC',
-    theme_color: '#0F172A',
+    theme_color: '#F4F8FB',
     icons: [
       {
         src: '/pwa-192x192.png',

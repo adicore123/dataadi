@@ -300,7 +300,7 @@ export default function SmartVaultCRMPage() {
     activeTab === 'all' ? 'כל הקבצים' : MODULE_META[activeTab].label;
 
   return (
-    <div className="min-h-screen flex text-slate-100 pb-28 md:pb-0">
+    <div className="min-h-screen flex text-slate-800 pb-28 md:pb-0">
       {/* Right-Hand Glass Sidebar */}
       <SidebarNav
         activeTab={activeTab}
@@ -342,12 +342,12 @@ export default function SmartVaultCRMPage() {
                 type="button"
                 onClick={() => setIsMobileDrawerOpen(true)}
                 aria-label="פתיחת תפריט"
-                className="md:hidden h-11 w-11 shrink-0 rounded-2xl glass flex items-center justify-center text-slate-200 hover:bg-white/10 active:scale-95 transition cursor-pointer"
+                className="md:hidden h-11 w-11 shrink-0 rounded-2xl glass flex items-center justify-center text-slate-600 hover:bg-slate-900/5 active:scale-95 transition cursor-pointer"
               >
-                <Menu className="w-5 h-5 text-mint-400" />
+                <Menu className="w-5 h-5 text-mint-600" />
               </button>
 
-              <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-50 truncate">
+              <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900 truncate">
                 {activeModuleTitle}
               </h1>
             </div>
@@ -385,7 +385,7 @@ export default function SmartVaultCRMPage() {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="חיפוש קובץ לפי שם, אלבום או תאריך..."
-                className="w-full h-12 pr-12 pl-4 rounded-2xl glass text-base text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-mint-400/60 focus:bg-white/[0.07] transition-colors"
+                className="w-full h-12 pr-12 pl-4 rounded-2xl glass text-base text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-mint-500/60 focus:bg-white transition-colors"
               />
             </div>
           )}

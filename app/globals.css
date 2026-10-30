@@ -1,8 +1,8 @@
 @import "tailwindcss";
 
 /*
- * Smart Vault — Design System "Vault Dark Premium 2026"
- * Deep-night canvas + aurora glow, glassmorphism surfaces,
+ * Smart Vault — Design System "Vault Light 2026"
+ * Daylight canvas + pastel aurora, porcelain glass surfaces,
  * emerald→teal accent gradient, Swiss-minimal typography.
  */
 
@@ -11,22 +11,25 @@
   --font-sans: Inter, "Segoe UI", Arial, "Noto Sans Hebrew", sans-serif;
   --font-mono: "Cascadia Mono", Consolas, ui-monospace, monospace;
 
-  /* Brand ramp */
-  --color-vault-950: #060b16;
-  --color-vault-900: #0b1120;
-  --color-vault-850: #101a2e;
-  --color-vault-800: #16223a;
-  --color-vault-700: #1f2f4d;
+  /* Brand ramp — airy light surfaces */
+  --color-vault-50: #f4f8fb;
+  --color-vault-100: #eaf2f8;
+  --color-vault-200: #dde8f1;
+  --color-vault-300: #c9d9e6;
 
+  /* Emerald ramp — deeper steps carry text on light backgrounds */
+  --color-mint-200: #a7f3d0;
   --color-mint-300: #6ee7b7;
   --color-mint-400: #34d399;
   --color-mint-500: #10b981;
+  --color-mint-600: #059669;
+  --color-mint-700: #047857;
 
   --radius-4xl: 1.75rem;
   --radius-5xl: 2rem;
 
-  --shadow-glow: 0 8px 32px -8px rgb(52 211 153 / 0.35);
-  --shadow-card: 0 1px 0 0 rgb(255 255 255 / 0.04) inset, 0 12px 32px -16px rgb(0 0 0 / 0.6);
+  --shadow-glow: 0 8px 28px -10px rgb(16 185 129 / 0.45);
+  --shadow-card: 0 1px 0 0 rgb(255 255 255 / 0.85) inset, 0 12px 32px -20px rgb(15 23 42 / 0.25);
 }
 
 @layer base {
@@ -35,39 +38,39 @@
   }
 
   body {
-    background-color: var(--color-vault-950);
-    color: var(--color-slate-100);
+    background-color: var(--color-vault-50);
+    color: var(--color-slate-800);
     -webkit-tap-highlight-color: transparent;
     text-rendering: optimizeLegibility;
   }
 
   /* Keyboard users always get a visible, on-brand focus ring. */
   :focus-visible {
-    outline: 2px solid var(--color-mint-400);
+    outline: 2px solid var(--color-mint-500);
     outline-offset: 2px;
     border-radius: 6px;
   }
 
   ::selection {
     background: var(--color-mint-500);
-    color: #041014;
+    color: #ffffff;
   }
 
   /* Slim, on-brand scrollbars */
   * {
     scrollbar-width: thin;
-    scrollbar-color: rgb(255 255 255 / 0.14) transparent;
+    scrollbar-color: rgb(15 23 42 / 0.18) transparent;
   }
   *::-webkit-scrollbar {
     width: 8px;
     height: 8px;
   }
   *::-webkit-scrollbar-thumb {
-    background: rgb(255 255 255 / 0.14);
+    background: rgb(15 23 42 / 0.18);
     border-radius: 999px;
   }
   *::-webkit-scrollbar-thumb:hover {
-    background: rgb(255 255 255 / 0.22);
+    background: rgb(15 23 42 / 0.28);
   }
 
   @media (prefers-reduced-motion: reduce) {
@@ -83,40 +86,40 @@
 }
 
 @layer utilities {
-  /* Fixed aurora canvas behind the app — the "premium 2026" ambience. */
+  /* Fixed aurora canvas behind the app — soft daylight ambience. */
   .aurora-canvas {
     background:
-      radial-gradient(52rem 34rem at 88% -8%, rgb(16 185 129 / 0.16), transparent 60%),
-      radial-gradient(44rem 30rem at -12% 24%, rgb(56 130 246 / 0.12), transparent 60%),
-      radial-gradient(40rem 40rem at 50% 118%, rgb(109 40 217 / 0.10), transparent 62%),
-      linear-gradient(180deg, #0b1120 0%, #060b16 100%);
+      radial-gradient(52rem 34rem at 88% -8%, rgb(16 185 129 / 0.10), transparent 60%),
+      radial-gradient(44rem 30rem at -12% 24%, rgb(59 130 246 / 0.08), transparent 60%),
+      radial-gradient(40rem 40rem at 50% 118%, rgb(139 92 246 / 0.07), transparent 62%),
+      linear-gradient(180deg, #fbfdfe 0%, #eef5f9 100%);
   }
 
-  /* Frosted glass surface (cards, sheets, docks). */
+  /* Frosted porcelain surface (cards, sheets, docks). */
   .glass {
-    background: rgb(255 255 255 / 0.045);
-    border: 1px solid rgb(255 255 255 / 0.08);
-    backdrop-filter: blur(18px) saturate(140%);
-    -webkit-backdrop-filter: blur(18px) saturate(140%);
+    background: rgb(255 255 255 / 0.65);
+    border: 1px solid rgb(15 23 42 / 0.08);
+    backdrop-filter: blur(18px) saturate(150%);
+    -webkit-backdrop-filter: blur(18px) saturate(150%);
   }
 
   .glass-strong {
-    background: rgb(13 20 36 / 0.82);
-    border: 1px solid rgb(255 255 255 / 0.09);
-    backdrop-filter: blur(24px) saturate(150%);
-    -webkit-backdrop-filter: blur(24px) saturate(150%);
+    background: rgb(255 255 255 / 0.86);
+    border: 1px solid rgb(15 23 42 / 0.1);
+    backdrop-filter: blur(24px) saturate(160%);
+    -webkit-backdrop-filter: blur(24px) saturate(160%);
   }
 
   /* Signature accent gradient for primary actions. */
   .btn-accent {
-    background-image: linear-gradient(135deg, #6ee7b7 0%, #2dd4bf 55%, #34d399 100%);
-    color: #041014;
-    box-shadow: 0 10px 32px -12px rgb(52 211 153 / 0.55);
+    background-image: linear-gradient(135deg, #10b981 0%, #14b8a6 55%, #0d9488 100%);
+    color: #ffffff;
+    box-shadow: 0 10px 28px -12px rgb(13 148 136 / 0.55);
     transition: transform 180ms ease, box-shadow 180ms ease, filter 180ms ease;
   }
   .btn-accent:hover {
-    filter: brightness(1.06);
-    box-shadow: 0 14px 40px -12px rgb(52 211 153 / 0.65);
+    filter: brightness(1.05);
+    box-shadow: 0 14px 36px -12px rgb(13 148 136 / 0.65);
   }
   .btn-accent:active {
     transform: scale(0.97);
@@ -125,12 +128,12 @@
   /* Hairline top highlight used on elevated cards. */
   .card-sheen {
     box-shadow:
-      inset 0 1px 0 0 rgb(255 255 255 / 0.06),
-      0 16px 40px -20px rgb(0 0 0 / 0.7);
+      inset 0 1px 0 0 rgb(255 255 255 / 0.9),
+      0 16px 36px -24px rgb(15 23 42 / 0.28);
   }
 
   .text-gradient {
-    background-image: linear-gradient(120deg, #e2e8f0 20%, #6ee7b7 90%);
+    background-image: linear-gradient(120deg, #0f172a 20%, #059669 90%);
     -webkit-background-clip: text;
     background-clip: text;
     color: transparent;
@@ -149,6 +152,6 @@
     width: 2.75rem;
     height: 0.3rem;
     border-radius: 999px;
-    background: rgb(255 255 255 / 0.18);
+    background: rgb(15 23 42 / 0.15);
   }
 }

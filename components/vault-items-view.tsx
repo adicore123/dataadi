@@ -73,16 +73,16 @@ export function VaultItemsView({
       <div className="glass card-sheen rounded-3xl p-5 space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2.5">
-            <span className="flex items-center justify-center w-9 h-9 rounded-xl bg-gradient-to-br from-mint-400/25 to-teal-400/10 text-mint-300">
+            <span className="flex items-center justify-center w-9 h-9 rounded-xl bg-gradient-to-br from-mint-500/20 to-teal-500/10 text-mint-600">
               <Folder className="w-[18px] h-[18px]" />
             </span>
-            <h2 className="text-base font-bold text-slate-50">האלבומים שלי</h2>
+            <h2 className="text-base font-bold text-slate-900">האלבומים שלי</h2>
           </div>
 
           <button
             type="button"
             onClick={() => setShowNewAlbumForm((prev) => !prev)}
-            className="min-h-10 px-4 py-2 rounded-xl glass text-sm font-bold text-mint-300 hover:bg-white/10 active:scale-95 transition flex items-center gap-2 cursor-pointer"
+            className="min-h-10 px-4 py-2 rounded-xl glass text-sm font-bold text-mint-700 hover:bg-slate-900/5 active:scale-95 transition flex items-center gap-2 cursor-pointer"
           >
             <FolderPlus className="w-4 h-4" />
             <span>אלבום חדש</span>
@@ -103,7 +103,7 @@ export function VaultItemsView({
               value={newAlbumInput}
               onChange={(e) => setNewAlbumInput(e.target.value)}
               placeholder="שם האלבום החדש (למשל: קבלות, משפחה, עבודה)..."
-              className="flex-1 min-h-11 px-4 rounded-xl glass text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-mint-400/60"
+              className="flex-1 min-h-11 px-4 rounded-xl glass text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-mint-500/60"
             />
             <button
               type="submit"
@@ -126,8 +126,8 @@ export function VaultItemsView({
             onClick={() => onSelectAlbum('all')}
             className={`min-h-11 px-4 py-2 rounded-xl border text-sm font-bold flex items-center gap-2 transition cursor-pointer ${
               selectedAlbumId === 'all'
-                ? 'bg-gradient-to-br from-mint-400/20 to-teal-400/10 border-mint-400/40 text-mint-200'
-                : 'glass text-slate-300 hover:bg-white/10'
+                ? 'bg-gradient-to-br from-mint-500/15 to-teal-500/10 border-mint-500/40 text-mint-700'
+                : 'glass text-slate-600 hover:bg-slate-900/5'
             }`}
           >
             <span>כל התמונות</span>
@@ -142,8 +142,8 @@ export function VaultItemsView({
                 key={album.id}
                 className={`min-h-11 rounded-xl border flex items-center transition ${
                   isSelected
-                    ? 'bg-gradient-to-br from-mint-400/20 to-teal-400/10 border-mint-400/40'
-                    : 'glass hover:bg-white/10'
+                    ? 'bg-gradient-to-br from-mint-500/15 to-teal-500/10 border-mint-500/40'
+                    : 'glass hover:bg-slate-900/5'
                 }`}
               >
                 <button
@@ -152,12 +152,12 @@ export function VaultItemsView({
                   aria-selected={isSelected}
                   onClick={() => onSelectAlbum(album.id)}
                   className={`px-4 py-2 text-sm font-bold flex items-center gap-2 cursor-pointer ${
-                    isSelected ? 'text-mint-200' : 'text-slate-300'
+                    isSelected ? 'text-mint-700' : 'text-slate-600'
                   }`}
                 >
                   <Folder
                     className={`w-4 h-4 ${
-                      isSelected ? 'text-mint-400' : 'text-slate-500'
+                      isSelected ? 'text-mint-600' : 'text-slate-500'
                     }`}
                   />
                   <span>{album.name}</span>
@@ -167,7 +167,7 @@ export function VaultItemsView({
                   type="button"
                   onClick={() => onDeleteAlbum(album.id)}
                   aria-label={`מחיקת אלבום ${album.name}`}
-                  className="pl-3 pr-2 h-full min-w-11 flex items-center justify-center text-slate-500 hover:text-red-400 transition-colors cursor-pointer"
+                  className="pl-3 pr-2 h-full min-w-11 flex items-center justify-center text-slate-400 hover:text-red-600 transition-colors cursor-pointer"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                 </button>
@@ -192,7 +192,7 @@ export function VaultItemsView({
             className="absolute -top-20 left-1/2 -translate-x-1/2 w-64 h-64 rounded-full bg-mint-400/15 blur-3xl"
           />
           <div className="relative">
-            <div className="w-20 h-20 rounded-4xl bg-gradient-to-br from-mint-400/25 to-teal-500/10 border border-mint-400/20 text-mint-300 flex items-center justify-center mx-auto mb-5 shadow-glow">
+            <div className="w-20 h-20 rounded-4xl bg-gradient-to-br from-mint-500/20 to-teal-500/10 border border-mint-500/25 text-mint-600 flex items-center justify-center mx-auto mb-5 shadow-glow">
               {activeTab === 'photos' ? (
                 <ImageIcon className="w-9 h-9" />
               ) : activeTab === 'recordings' ? (
@@ -201,14 +201,14 @@ export function VaultItemsView({
                 <FileText className="w-9 h-9" />
               )}
             </div>
-            <h3 className="text-xl font-bold text-slate-50 tracking-tight">
+            <h3 className="text-xl font-bold text-slate-900 tracking-tight">
               {searchQuery
                 ? `לא נמצאו תוצאות עבור "${searchQuery}"`
                 : activeTab === 'photos' && selectedAlbumObj
                 ? `האלבום "${selectedAlbumObj.name}" ריק`
                 : 'אין עדיין קבצים כאן'}
             </h3>
-            <p className="text-sm text-slate-400 mt-2 leading-relaxed">
+            <p className="text-sm text-slate-500 mt-2 leading-relaxed">
               לחץ על הכפתור למטה כדי להעלות מסמך, תמונה או הקלטה.
             </p>
             <button
@@ -241,12 +241,12 @@ export function VaultItemsView({
           {items.map((item) => (
             <article
               key={item.id}
-              className="glass card-sheen rounded-3xl overflow-hidden flex flex-col justify-between group hover:border-white/[0.16] hover:-translate-y-0.5 transition-all"
+              className="glass card-sheen rounded-3xl overflow-hidden flex flex-col justify-between group hover:border-mint-500/30 hover:-translate-y-0.5 transition-all"
             >
               <button
                 type="button"
                 onClick={() => onSelectItem(item)}
-                className="relative w-full aspect-[4/3] bg-vault-850 overflow-hidden block cursor-pointer"
+                className="relative w-full aspect-[4/3] bg-vault-200 overflow-hidden block cursor-pointer"
               >
                 {item.dataUrl ? (
                   <img
@@ -256,18 +256,18 @@ export function VaultItemsView({
                     className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.06]"
                   />
                 ) : (
-                  <div className="w-full h-full flex items-center justify-center text-slate-600">
+                  <div className="w-full h-full flex items-center justify-center text-slate-400">
                     <ImageIcon className="w-10 h-10" />
                   </div>
                 )}
                 {/* Gradient scrim with the title on top of the photo */}
-                <div className="absolute inset-x-0 bottom-0 pt-14 pb-3.5 px-4 bg-gradient-to-t from-vault-950/95 via-vault-950/55 to-transparent text-right">
+                <div className="absolute inset-x-0 bottom-0 pt-14 pb-3.5 px-4 bg-gradient-to-t from-slate-950/85 via-slate-950/45 to-transparent text-right">
                   <h3 className="text-[15px] font-bold text-white truncate">
                     {item.title}
                   </h3>
-                  <div className="flex items-center gap-2 text-[11px] text-slate-300 mt-1">
+                  <div className="flex items-center gap-2 text-[11px] text-slate-200 mt-1">
                     {item.albumName && (
-                      <span className="inline-flex items-center gap-1 rounded-md bg-white/10 border border-white/10 px-1.5 py-0.5 font-semibold text-mint-200 truncate max-w-[10rem]">
+                      <span className="inline-flex items-center gap-1 rounded-md bg-white/15 border border-white/20 px-1.5 py-0.5 font-semibold text-mint-200 truncate max-w-[10rem]">
                         <Folder className="w-3 h-3 shrink-0" />
                         <span className="truncate">{item.albumName}</span>
                       </span>
@@ -279,11 +279,11 @@ export function VaultItemsView({
                 </div>
               </button>
 
-              <div className="px-3.5 py-3 flex items-center justify-between border-t border-white/[0.05]">
+              <div className="px-3.5 py-3 flex items-center justify-between border-t border-slate-900/[0.06]">
                 <button
                   type="button"
                   onClick={() => onSelectItem(item)}
-                  className="min-h-10 px-3.5 py-1.5 rounded-xl text-sm font-bold text-mint-300 hover:bg-mint-400/10 active:scale-95 transition cursor-pointer"
+                  className="min-h-10 px-3.5 py-1.5 rounded-xl text-sm font-bold text-mint-700 hover:bg-mint-500/10 active:scale-95 transition cursor-pointer"
                 >
                   פתיחת תמונה
                 </button>
@@ -294,7 +294,7 @@ export function VaultItemsView({
                       href={item.dataUrl}
                       download={item.fileName}
                       aria-label={`הורדת ${item.title}`}
-                      className="w-10 h-10 flex items-center justify-center rounded-xl glass text-slate-300 hover:text-white hover:bg-white/10 transition cursor-pointer"
+                      className="w-10 h-10 flex items-center justify-center rounded-xl glass text-slate-500 hover:text-slate-900 hover:bg-slate-900/5 transition cursor-pointer"
                     >
                       <Download className="w-4 h-4" />
                     </a>
@@ -303,7 +303,7 @@ export function VaultItemsView({
                     type="button"
                     onClick={() => onDeleteItem(item.id)}
                     aria-label={`מחיקת ${item.title}`}
-                    className="w-10 h-10 flex items-center justify-center rounded-xl glass text-slate-400 hover:text-red-400 hover:border-red-400/30 hover:bg-red-400/10 transition cursor-pointer"
+                    className="w-10 h-10 flex items-center justify-center rounded-xl glass text-slate-400 hover:text-red-600 hover:border-red-500/30 hover:bg-red-500/10 transition cursor-pointer"
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>
@@ -326,14 +326,14 @@ export function VaultItemsView({
         return (
           <article
             key={item.id}
-            className="glass card-sheen rounded-3xl hover:border-white/[0.16] hover:-translate-y-0.5 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4 group"
+            className="glass card-sheen rounded-3xl hover:border-mint-500/30 hover:-translate-y-0.5 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4 group"
           >
             <div className="flex items-center gap-4 min-w-0 flex-1 p-4 sm:p-5 sm:pb-5">
               {isPhoto && item.dataUrl ? (
                 <button
                   type="button"
                   onClick={() => onSelectItem(item)}
-                  className="w-14 h-14 rounded-2xl overflow-hidden bg-vault-850 ring-1 ring-white/10 shrink-0 cursor-pointer"
+                  className="w-14 h-14 rounded-2xl overflow-hidden bg-vault-200 ring-1 ring-slate-900/10 shrink-0 cursor-pointer"
                 >
                   <img
                     src={item.dataUrl}
@@ -348,8 +348,8 @@ export function VaultItemsView({
                   onClick={() => onSelectItem(item)}
                   className={`w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 cursor-pointer border transition-colors ${
                     isRecording
-                      ? 'bg-gradient-to-br from-mint-400/20 to-teal-400/10 border-mint-400/20 text-mint-300'
-                      : 'bg-white/[0.05] border-white/[0.07] text-slate-300'
+                      ? 'bg-gradient-to-br from-mint-500/20 to-teal-500/10 border-mint-500/25 text-mint-600'
+                      : 'bg-slate-900/[0.04] border-slate-900/[0.08] text-slate-500'
                   }`}
                 >
                   {isRecording ? (
@@ -366,19 +366,19 @@ export function VaultItemsView({
                 <button
                   type="button"
                   onClick={() => onSelectItem(item)}
-                  className="text-right text-lg font-bold text-slate-50 hover:text-mint-300 truncate block w-full cursor-pointer transition-colors"
+                  className="text-right text-lg font-bold text-slate-900 hover:text-mint-700 truncate block w-full cursor-pointer transition-colors"
                 >
                   {item.title}
                 </button>
 
-                <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400 mt-1">
-                  <span className="font-semibold text-slate-300">
+                <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 mt-1">
+                  <span className="font-semibold text-slate-600">
                     {MODULE_META[item.module].singularLabel}
                   </span>
                   {isPhoto && item.albumName && (
                     <>
                       <span aria-hidden="true">·</span>
-                      <span className="font-bold text-mint-300">
+                      <span className="font-bold text-mint-700">
                         אלבום: {item.albumName}
                       </span>
                     </>
@@ -401,7 +401,7 @@ export function VaultItemsView({
               <button
                 type="button"
                 onClick={() => onSelectItem(item)}
-                className="min-h-10 px-4 py-2 rounded-xl glass text-sm font-bold text-slate-100 hover:bg-white/10 active:scale-95 transition cursor-pointer"
+                className="min-h-10 px-4 py-2 rounded-xl glass text-sm font-bold text-slate-800 hover:bg-slate-900/5 active:scale-95 transition cursor-pointer"
               >
                 פתח
               </button>
@@ -411,7 +411,7 @@ export function VaultItemsView({
                   href={item.dataUrl}
                   download={item.fileName}
                   aria-label={`הורדת ${item.title}`}
-                  className="w-11 h-11 flex items-center justify-center rounded-xl glass text-slate-300 hover:text-white hover:bg-white/10 transition cursor-pointer"
+                  className="w-11 h-11 flex items-center justify-center rounded-xl glass text-slate-500 hover:text-slate-900 hover:bg-slate-900/5 transition cursor-pointer"
                 >
                   <Download className="w-4 h-4" />
                 </a>
@@ -421,7 +421,7 @@ export function VaultItemsView({
                 type="button"
                 onClick={() => onDeleteItem(item.id)}
                 aria-label={`מחיקת ${item.title}`}
-                className="w-11 h-11 flex items-center justify-center rounded-xl glass text-slate-400 hover:text-red-400 hover:border-red-400/30 hover:bg-red-400/10 transition cursor-pointer"
+                className="w-11 h-11 flex items-center justify-center rounded-xl glass text-slate-400 hover:text-red-600 hover:border-red-500/30 hover:bg-red-500/10 transition cursor-pointer"
               >
                 <Trash2 className="w-4 h-4" />
               </button>
