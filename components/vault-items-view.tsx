@@ -65,43 +65,49 @@ export function VaultItemsView({
     onSelectAlbum(created.id);
   };
 
-  // Simple Photo Albums Bar (only shown inside the Photos module)
+  // Photo Albums Bar (only inside the Photos module)
   const renderPhotoAlbumsSection = () => {
     if (activeTab !== 'photos') return null;
 
     return (
-      <div className="p-5 rounded-2xl border border-slate-200 bg-white space-y-4 mb-6">
+      <div className="glass card-sheen rounded-3xl p-5 space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <Folder className="w-5 h-5 text-teal-600" />
-            <h2 className="text-base font-bold text-slate-900">האלבומים שלי</h2>
+          <div className="flex items-center gap-2.5">
+            <span className="flex items-center justify-center w-9 h-9 rounded-xl bg-gradient-to-br from-mint-400/25 to-teal-400/10 text-mint-300">
+              <Folder className="w-[18px] h-[18px]" />
+            </span>
+            <h2 className="text-base font-bold text-slate-50">האלבומים שלי</h2>
           </div>
 
           <button
             type="button"
             onClick={() => setShowNewAlbumForm((prev) => !prev)}
-            className="h-10 px-4 rounded-xl bg-teal-50 text-teal-800 border border-teal-200 hover:bg-teal-100 text-sm font-bold flex items-center gap-2 cursor-pointer"
+            className="min-h-10 px-4 py-2 rounded-xl glass text-sm font-bold text-mint-300 hover:bg-white/10 active:scale-95 transition flex items-center gap-2 cursor-pointer"
           >
-            <FolderPlus className="w-4 h-4 text-teal-600" />
-            <span>+ אלבום חדש</span>
+            <FolderPlus className="w-4 h-4" />
+            <span>אלבום חדש</span>
           </button>
         </div>
 
         {showNewAlbumForm && (
           <form
             onSubmit={handleCreateAlbumInline}
-            className="flex items-center gap-2 pt-1"
+            className="flex flex-col sm:flex-row items-stretch gap-2"
           >
+            <label htmlFor="new-album-inline" className="sr-only">
+              שם אלבום חדש
+            </label>
             <input
+              id="new-album-inline"
               type="text"
               value={newAlbumInput}
               onChange={(e) => setNewAlbumInput(e.target.value)}
               placeholder="שם האלבום החדש (למשל: קבלות, משפחה, עבודה)..."
-              className="flex-1 h-11 px-4 rounded-xl border border-slate-300 bg-white text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900"
+              className="flex-1 min-h-11 px-4 rounded-xl glass text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-mint-400/60"
             />
             <button
               type="submit"
-              className="h-11 px-5 rounded-xl bg-slate-900 text-white text-sm font-bold hover:bg-slate-800 cursor-pointer"
+              className="btn-accent min-h-11 px-5 rounded-xl text-sm font-bold cursor-pointer"
             >
               צור אלבום
             </button>
@@ -118,14 +124,14 @@ export function VaultItemsView({
             role="tab"
             aria-selected={selectedAlbumId === 'all'}
             onClick={() => onSelectAlbum('all')}
-            className={`h-11 px-4 rounded-xl border text-sm font-bold flex items-center gap-2 cursor-pointer ${
+            className={`min-h-11 px-4 py-2 rounded-xl border text-sm font-bold flex items-center gap-2 transition cursor-pointer ${
               selectedAlbumId === 'all'
-                ? 'bg-slate-900 text-white border-slate-900'
-                : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                ? 'bg-gradient-to-br from-mint-400/20 to-teal-400/10 border-mint-400/40 text-mint-200'
+                : 'glass text-slate-300 hover:bg-white/10'
             }`}
           >
             <span>כל התמונות</span>
-            <span className="font-mono text-xs">({totalPhotosCount})</span>
+            <span className="font-mono text-xs opacity-80">({totalPhotosCount})</span>
           </button>
 
           {albums.map((album) => {
@@ -134,10 +140,10 @@ export function VaultItemsView({
             return (
               <div
                 key={album.id}
-                className={`h-11 rounded-xl border flex items-center ${
+                className={`min-h-11 rounded-xl border flex items-center transition ${
                   isSelected
-                    ? 'bg-slate-900 text-white border-slate-900'
-                    : 'bg-white text-slate-800 border-slate-200 hover:bg-slate-50'
+                    ? 'bg-gradient-to-br from-mint-400/20 to-teal-400/10 border-mint-400/40'
+                    : 'glass hover:bg-white/10'
                 }`}
               >
                 <button
@@ -145,11 +151,13 @@ export function VaultItemsView({
                   role="tab"
                   aria-selected={isSelected}
                   onClick={() => onSelectAlbum(album.id)}
-                  className="px-4 h-full text-sm font-bold flex items-center gap-2 cursor-pointer"
+                  className={`px-4 py-2 text-sm font-bold flex items-center gap-2 cursor-pointer ${
+                    isSelected ? 'text-mint-200' : 'text-slate-300'
+                  }`}
                 >
                   <Folder
                     className={`w-4 h-4 ${
-                      isSelected ? 'text-teal-400' : 'text-teal-600'
+                      isSelected ? 'text-mint-400' : 'text-slate-500'
                     }`}
                   />
                   <span>{album.name}</span>
@@ -159,7 +167,7 @@ export function VaultItemsView({
                   type="button"
                   onClick={() => onDeleteAlbum(album.id)}
                   aria-label={`מחיקת אלבום ${album.name}`}
-                  className="pl-3 pr-1 h-full text-slate-400 hover:text-red-500 cursor-pointer"
+                  className="pl-3 pr-2 h-full min-w-11 flex items-center justify-center text-slate-500 hover:text-red-400 transition-colors cursor-pointer"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                 </button>
@@ -177,112 +185,129 @@ export function VaultItemsView({
     return (
       <div>
         {renderPhotoAlbumsSection()}
-        <div className="p-10 sm:p-14 rounded-3xl border border-slate-200 bg-white text-center max-w-lg mx-auto my-4">
-          <div className="w-16 h-16 rounded-2xl bg-teal-50 text-teal-600 flex items-center justify-center mx-auto mb-4">
-            {activeTab === 'photos' ? (
-              <ImageIcon className="w-8 h-8" />
-            ) : activeTab === 'recordings' ? (
-              <Mic className="w-8 h-8" />
-            ) : (
-              <FileText className="w-8 h-8" />
-            )}
+        <div className="glass card-sheen rounded-4xl p-10 sm:p-14 text-center max-w-lg mx-auto my-4 relative overflow-hidden">
+          {/* Ambient glow behind the icon */}
+          <div
+            aria-hidden="true"
+            className="absolute -top-20 left-1/2 -translate-x-1/2 w-64 h-64 rounded-full bg-mint-400/15 blur-3xl"
+          />
+          <div className="relative">
+            <div className="w-20 h-20 rounded-4xl bg-gradient-to-br from-mint-400/25 to-teal-500/10 border border-mint-400/20 text-mint-300 flex items-center justify-center mx-auto mb-5 shadow-glow">
+              {activeTab === 'photos' ? (
+                <ImageIcon className="w-9 h-9" />
+              ) : activeTab === 'recordings' ? (
+                <Mic className="w-9 h-9" />
+              ) : (
+                <FileText className="w-9 h-9" />
+              )}
+            </div>
+            <h3 className="text-xl font-bold text-slate-50 tracking-tight">
+              {searchQuery
+                ? `לא נמצאו תוצאות עבור "${searchQuery}"`
+                : activeTab === 'photos' && selectedAlbumObj
+                ? `האלבום "${selectedAlbumObj.name}" ריק`
+                : 'אין עדיין קבצים כאן'}
+            </h3>
+            <p className="text-sm text-slate-400 mt-2 leading-relaxed">
+              לחץ על הכפתור למטה כדי להעלות מסמך, תמונה או הקלטה.
+            </p>
+            <button
+              type="button"
+              onClick={() =>
+                onOpenUpload(
+                  'upload',
+                  activeTab === 'photos' && selectedAlbumId !== 'all'
+                    ? selectedAlbumId
+                    : undefined
+                )
+              }
+              className="btn-accent mt-7 h-13 px-7 rounded-2xl text-base font-bold inline-flex items-center gap-2.5 cursor-pointer"
+            >
+              <Plus className="w-5 h-5 stroke-[2.5]" />
+              <span>העלאת קובץ חדש</span>
+            </button>
           </div>
-          <h3 className="text-xl font-bold text-slate-900">
-            {searchQuery
-              ? `לא נמצאו תוצאות עבור "${searchQuery}"`
-              : activeTab === 'photos' && selectedAlbumObj
-              ? `האלבום "${selectedAlbumObj.name}" ריק`
-              : 'אין עדיין קבצים כאן'}
-          </h3>
-          <p className="text-sm text-slate-500 mt-2">
-            לחץ על הכפתור למטה כדי להעלות מסמך, תמונה או הקלטה.
-          </p>
-          <button
-            type="button"
-            onClick={() =>
-              onOpenUpload(
-                'upload',
-                activeTab === 'photos' && selectedAlbumId !== 'all'
-                  ? selectedAlbumId
-                  : undefined
-              )
-            }
-            className="mt-6 h-13 px-7 rounded-2xl bg-slate-900 text-white text-base font-bold hover:bg-slate-800 inline-flex items-center gap-2.5 cursor-pointer shadow-sm"
-          >
-            <Plus className="w-5 h-5 text-teal-400 stroke-[2.5]" />
-            <span>העלאת קובץ חדש</span>
-          </button>
         </div>
       </div>
     );
   }
 
-  // Clean Photo Grid when in the Photos module
+  // Photo Grid inside the Photos module
   if (activeTab === 'photos') {
     return (
       <div>
         {renderPhotoAlbumsSection()}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
           {items.map((item) => (
             <article
               key={item.id}
-              className="rounded-2xl border border-slate-200 bg-white overflow-hidden flex flex-col justify-between hover:border-slate-300 transition-all"
+              className="glass card-sheen rounded-3xl overflow-hidden flex flex-col justify-between group hover:border-white/[0.16] hover:-translate-y-0.5 transition-all"
             >
-              <div>
-                <button
-                  type="button"
-                  onClick={() => onSelectItem(item)}
-                  className="w-full h-52 bg-slate-900 overflow-hidden block cursor-pointer"
-                >
-                  {item.dataUrl ? (
-                    <img
-                      src={item.dataUrl}
-                      alt={item.title}
-                      referrerPolicy="no-referrer"
-                      className="w-full h-full object-cover"
-                    />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center text-slate-400">
-                      <ImageIcon className="w-10 h-10" />
-                    </div>
-                  )}
-                </button>
-
-                <div className="p-4">
-                  <h3 className="text-lg font-bold text-slate-900">{item.title}</h3>
-                  <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 mt-2">
+              <button
+                type="button"
+                onClick={() => onSelectItem(item)}
+                className="relative w-full aspect-[4/3] bg-vault-850 overflow-hidden block cursor-pointer"
+              >
+                {item.dataUrl ? (
+                  <img
+                    src={item.dataUrl}
+                    alt={item.title}
+                    referrerPolicy="no-referrer"
+                    className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.06]"
+                  />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center text-slate-600">
+                    <ImageIcon className="w-10 h-10" />
+                  </div>
+                )}
+                {/* Gradient scrim with the title on top of the photo */}
+                <div className="absolute inset-x-0 bottom-0 pt-14 pb-3.5 px-4 bg-gradient-to-t from-vault-950/95 via-vault-950/55 to-transparent text-right">
+                  <h3 className="text-[15px] font-bold text-white truncate">
+                    {item.title}
+                  </h3>
+                  <div className="flex items-center gap-2 text-[11px] text-slate-300 mt-1">
                     {item.albumName && (
-                      <>
-                        <span className="font-bold text-teal-700">
-                          אלבום: {item.albumName}
-                        </span>
-                        <span>·</span>
-                      </>
+                      <span className="inline-flex items-center gap-1 rounded-md bg-white/10 border border-white/10 px-1.5 py-0.5 font-semibold text-mint-200 truncate max-w-[10rem]">
+                        <Folder className="w-3 h-3 shrink-0" />
+                        <span className="truncate">{item.albumName}</span>
+                      </span>
                     )}
-                    <span dir="ltr" className="font-mono">
-                      {item.formattedDate} · {item.formattedTime}
+                    <span dir="ltr" className="font-mono tabular-nums">
+                      {item.formattedDate}
                     </span>
                   </div>
                 </div>
-              </div>
+              </button>
 
-              <div className="px-4 py-3 border-t border-slate-100 flex items-center justify-between bg-slate-50/50">
+              <div className="px-3.5 py-3 flex items-center justify-between border-t border-white/[0.05]">
                 <button
                   type="button"
                   onClick={() => onSelectItem(item)}
-                  className="text-sm font-bold text-teal-700 hover:underline cursor-pointer"
+                  className="min-h-10 px-3.5 py-1.5 rounded-xl text-sm font-bold text-mint-300 hover:bg-mint-400/10 active:scale-95 transition cursor-pointer"
                 >
                   פתיחת תמונה
                 </button>
 
-                <button
-                  type="button"
-                  onClick={() => onDeleteItem(item.id)}
-                  aria-label={`מחיקת ${item.title}`}
-                  className="p-2 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 cursor-pointer"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
+                <div className="flex items-center gap-1.5">
+                  {item.dataUrl && (
+                    <a
+                      href={item.dataUrl}
+                      download={item.fileName}
+                      aria-label={`הורדת ${item.title}`}
+                      className="w-10 h-10 flex items-center justify-center rounded-xl glass text-slate-300 hover:text-white hover:bg-white/10 transition cursor-pointer"
+                    >
+                      <Download className="w-4 h-4" />
+                    </a>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => onDeleteItem(item.id)}
+                    aria-label={`מחיקת ${item.title}`}
+                    className="w-10 h-10 flex items-center justify-center rounded-xl glass text-slate-400 hover:text-red-400 hover:border-red-400/30 hover:bg-red-400/10 transition cursor-pointer"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
             </article>
           ))}
@@ -291,7 +316,7 @@ export function VaultItemsView({
     );
   }
 
-  // Simple, Large, Easy-to-Read File Rows
+  // Documents / Recordings — large readable rows
   return (
     <div className="space-y-3">
       {items.map((item) => {
@@ -301,14 +326,14 @@ export function VaultItemsView({
         return (
           <article
             key={item.id}
-            className="p-4 sm:p-5 rounded-2xl border border-slate-200 bg-white hover:border-slate-300 transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+            className="glass card-sheen rounded-3xl hover:border-white/[0.16] hover:-translate-y-0.5 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4 group"
           >
-            <div className="flex items-center gap-4 min-w-0 flex-1">
+            <div className="flex items-center gap-4 min-w-0 flex-1 p-4 sm:p-5 sm:pb-5">
               {isPhoto && item.dataUrl ? (
                 <button
                   type="button"
                   onClick={() => onSelectItem(item)}
-                  className="w-14 h-14 rounded-xl overflow-hidden bg-slate-900 shrink-0 cursor-pointer"
+                  className="w-14 h-14 rounded-2xl overflow-hidden bg-vault-850 ring-1 ring-white/10 shrink-0 cursor-pointer"
                 >
                   <img
                     src={item.dataUrl}
@@ -321,10 +346,10 @@ export function VaultItemsView({
                 <button
                   type="button"
                   onClick={() => onSelectItem(item)}
-                  className={`w-14 h-14 rounded-xl flex items-center justify-center shrink-0 cursor-pointer ${
+                  className={`w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 cursor-pointer border transition-colors ${
                     isRecording
-                      ? 'bg-teal-50 text-teal-700'
-                      : 'bg-slate-100 text-slate-800'
+                      ? 'bg-gradient-to-br from-mint-400/20 to-teal-400/10 border-mint-400/20 text-mint-300'
+                      : 'bg-white/[0.05] border-white/[0.07] text-slate-300'
                   }`}
                 >
                   {isRecording ? (
@@ -341,25 +366,25 @@ export function VaultItemsView({
                 <button
                   type="button"
                   onClick={() => onSelectItem(item)}
-                  className="text-right text-lg font-bold text-slate-900 hover:text-teal-700 truncate block w-full cursor-pointer"
+                  className="text-right text-lg font-bold text-slate-50 hover:text-mint-300 truncate block w-full cursor-pointer transition-colors"
                 >
                   {item.title}
                 </button>
 
-                <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 mt-1">
-                  <span className="font-semibold text-slate-700">
+                <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400 mt-1">
+                  <span className="font-semibold text-slate-300">
                     {MODULE_META[item.module].singularLabel}
                   </span>
                   {isPhoto && item.albumName && (
                     <>
-                      <span>·</span>
-                      <span className="font-bold text-teal-700">
+                      <span aria-hidden="true">·</span>
+                      <span className="font-bold text-mint-300">
                         אלבום: {item.albumName}
                       </span>
                     </>
                   )}
-                  <span>·</span>
-                  <span dir="ltr" className="font-mono text-slate-700">
+                  <span aria-hidden="true">·</span>
+                  <span dir="ltr" className="font-mono text-slate-400 tabular-nums">
                     {item.formattedDate} · {item.formattedTime}
                   </span>
                 </div>
@@ -372,11 +397,11 @@ export function VaultItemsView({
               </div>
             </div>
 
-            <div className="flex items-center justify-end gap-2 shrink-0">
+            <div className="flex items-center justify-end gap-2 shrink-0 px-4 sm:pl-5 pb-4 sm:pb-5">
               <button
                 type="button"
                 onClick={() => onSelectItem(item)}
-                className="h-10 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 text-sm font-bold text-slate-900 cursor-pointer"
+                className="min-h-10 px-4 py-2 rounded-xl glass text-sm font-bold text-slate-100 hover:bg-white/10 active:scale-95 transition cursor-pointer"
               >
                 פתח
               </button>
@@ -386,7 +411,7 @@ export function VaultItemsView({
                   href={item.dataUrl}
                   download={item.fileName}
                   aria-label={`הורדת ${item.title}`}
-                  className="w-10 h-10 flex items-center justify-center rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-100"
+                  className="w-11 h-11 flex items-center justify-center rounded-xl glass text-slate-300 hover:text-white hover:bg-white/10 transition cursor-pointer"
                 >
                   <Download className="w-4 h-4" />
                 </a>
@@ -396,7 +421,7 @@ export function VaultItemsView({
                 type="button"
                 onClick={() => onDeleteItem(item.id)}
                 aria-label={`מחיקת ${item.title}`}
-                className="w-10 h-10 flex items-center justify-center rounded-xl border border-slate-200 text-slate-400 hover:text-red-600 hover:bg-red-50 cursor-pointer"
+                className="w-11 h-11 flex items-center justify-center rounded-xl glass text-slate-400 hover:text-red-400 hover:border-red-400/30 hover:bg-red-400/10 transition cursor-pointer"
               >
                 <Trash2 className="w-4 h-4" />
               </button>

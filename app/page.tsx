@@ -33,10 +33,31 @@ import {
 } from '@/lib/vault-storage';
 import { usePWAInstall } from '@/hooks/use-pwa-install';
 import { SidebarNav } from '@/components/sidebar-nav';
-import { UploadShareModal, SharedDraft } from '@/components/upload-share-modal';
+import {
+  UploadShareModal,
+  SharedDraft,
+  UploadDestinationMode,
+  UploadMode,
+} from '@/components/upload-share-modal';
 import { ItemPreviewModal } from '@/components/item-preview-modal';
 import { PwaInstallModal } from '@/components/pwa-install-modal';
 import { VaultItemsView } from '@/components/vault-items-view';
+
+interface UploadModalContext {
+  mode: UploadMode;
+  destinationMode: UploadDestinationMode;
+  targetModule: ModuleType;
+  targetAlbumId?: string;
+  incomingShareDraft?: SharedDraft | null;
+}
+
+interface OpenUploadOptions {
+  mode?: UploadMode;
+  destinationMode: UploadDestinationMode;
+  targetModule?: ModuleType;
+  targetAlbumId?: string;
+  incomingShareDraft?: SharedDraft | null;
+}
 
 export default function SmartVaultCRMPage() {
   const [items, setItems] = useState<VaultItem[]>(() => getInitialSeedItems());
@@ -53,10 +74,12 @@ export default function SmartVaultCRMPage() {
 
   // Modals state
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
-  const [uploadModalMode, setUploadModalMode] = useState<
-    'upload' | 'record' | 'simulate-share'
-  >('upload');
-  const [incomingShareDraft, setIncomingShareDraft] = useState<SharedDraft | null>(null);
+  const [uploadContext, setUploadContext] = useState<UploadModalContext>({
+    mode: 'upload',
+    destinationMode: 'auto',
+    targetModule: 'photos',
+    incomingShareDraft: null,
+  });
   const [selectedItem, setSelectedItem] = useState<VaultItem | null>(null);
   const [pwaModalOpen, setPwaModalOpen] = useState(false);
 
@@ -98,7 +121,7 @@ export default function SmartVaultCRMPage() {
               sharedPayload.file?.type || '',
               sharedPayload.file?.name || ''
             );
-            setIncomingShareDraft({
+            const incomingShareDraft: SharedDraft = {
               title:
                 sharedPayload.title ||
                 (sharedPayload.file?.name
@@ -110,21 +133,31 @@ export default function SmartVaultCRMPage() {
               mimeType: sharedPayload.file?.type || 'application/octet-stream',
               dataUrl: fileDataUrl,
               suggestedModule: detectedMod,
+            };
+            setUploadContext({
+              mode: 'upload',
+              destinationMode: 'choose',
+              targetModule: detectedMod,
+              incomingShareDraft,
             });
-            setUploadModalMode('upload');
             setUploadModalOpen(true);
           }
           window.history.replaceState({}, '', '/');
         } else if (queryTitle || queryText) {
-          setIncomingShareDraft({
+          const incomingShareDraft: SharedDraft = {
             title: queryTitle || '',
             notes: queryText || '',
             fileName: 'shared-note.txt',
             fileSize: 2048,
             mimeType: 'text/plain',
             suggestedModule: 'documents',
+          };
+          setUploadContext({
+            mode: 'upload',
+            destinationMode: 'choose',
+            targetModule: 'documents',
+            incomingShareDraft,
           });
-          setUploadModalMode('upload');
           setUploadModalOpen(true);
           window.history.replaceState({}, '', '/');
         }
@@ -212,20 +245,20 @@ export default function SmartVaultCRMPage() {
     }
   };
 
-  const handleOpenUploadModal = (
-    mode: 'upload' | 'record' | 'simulate-share' = 'upload',
-    targetModule?: ModuleType,
-    targetAlbumId?: string
-  ) => {
-    setIncomingShareDraft(
-      targetModule || targetAlbumId
-        ? {
-            suggestedModule: targetModule,
-            suggestedAlbumId: targetAlbumId,
-          }
-        : null
-    );
-    setUploadModalMode(mode);
+  const handleOpenUploadModal = ({
+    mode = 'upload',
+    destinationMode,
+    targetModule,
+    targetAlbumId,
+    incomingShareDraft = null,
+  }: OpenUploadOptions) => {
+    setUploadContext({
+      mode,
+      destinationMode,
+      targetModule: targetModule || 'photos',
+      targetAlbumId,
+      incomingShareDraft,
+    });
     setUploadModalOpen(true);
   };
 
@@ -258,13 +291,17 @@ export default function SmartVaultCRMPage() {
 
   const defaultModuleForUpload: ModuleType =
     activeTab === 'all' ? 'photos' : activeTab;
+  const destinationModeForCurrentView: UploadDestinationMode =
+    activeTab === 'all' ? 'auto' : 'fixed';
+  const currentPhotoAlbumId =
+    activeTab === 'photos' && selectedAlbumId !== 'all' ? selectedAlbumId : undefined;
 
   const activeModuleTitle =
     activeTab === 'all' ? 'כל הקבצים' : MODULE_META[activeTab].label;
 
   return (
-    <div className="min-h-screen flex bg-slate-50 text-slate-900 pb-20 md:pb-0">
-      {/* Right-Hand Simple Sidebar */}
+    <div className="min-h-screen flex text-slate-100 pb-28 md:pb-0">
+      {/* Right-Hand Glass Sidebar */}
       <SidebarNav
         activeTab={activeTab}
         onSelectTab={setActiveTab}
@@ -277,11 +314,12 @@ export default function SmartVaultCRMPage() {
         onSignInGoogle={handleSignInGoogle}
         onSignOutGoogle={handleSignOutGoogle}
         onOpenUploadModal={(mode) =>
-          handleOpenUploadModal(
+          handleOpenUploadModal({
             mode,
-            activeTab === 'all' ? undefined : activeTab,
-            selectedAlbumId !== 'all' ? selectedAlbumId : undefined
-          )
+            destinationMode: destinationModeForCurrentView,
+            targetModule: defaultModuleForUpload,
+            targetAlbumId: currentPhotoAlbumId,
+          })
         }
         onOpenPwaModal={() => setPwaModalOpen(true)}
         isInstallable={isInstallable}
@@ -294,23 +332,22 @@ export default function SmartVaultCRMPage() {
         onCloseMobileDrawer={() => setIsMobileDrawerOpen(false)}
       />
 
-      {/* Clean, Calm Main Workspace */}
+      {/* Main Workspace over the aurora canvas */}
       <div className="flex-1 flex flex-col min-w-0 w-full">
-        {/* Simple Header: Only Title, Search, and 1 Upload Button */}
-        <header className="bg-white border-b border-slate-200 px-4 sm:px-8 py-4">
-          <div className="max-w-4xl mx-auto flex items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
+        {/* Glass Sticky Header: Title, Search shortcut, Upload */}
+        <header className="sticky top-0 z-20 glass-strong border-x-0 border-t-0 px-4 sm:px-8 py-3.5">
+          <div className="max-w-4xl mx-auto flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
               <button
                 type="button"
                 onClick={() => setIsMobileDrawerOpen(true)}
                 aria-label="פתיחת תפריט"
-                className="md:hidden h-11 px-3.5 rounded-xl bg-slate-900 text-white flex items-center gap-2 text-sm font-bold cursor-pointer"
+                className="md:hidden h-11 w-11 shrink-0 rounded-2xl glass flex items-center justify-center text-slate-200 hover:bg-white/10 active:scale-95 transition cursor-pointer"
               >
-                <Menu className="w-5 h-5 text-teal-400" />
-                <span>תפריט</span>
+                <Menu className="w-5 h-5 text-mint-400" />
               </button>
 
-              <h1 className="text-xl sm:text-2xl font-bold text-slate-900">
+              <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-50 truncate">
                 {activeModuleTitle}
               </h1>
             </div>
@@ -318,21 +355,23 @@ export default function SmartVaultCRMPage() {
             <button
               type="button"
               onClick={() =>
-                handleOpenUploadModal(
-                  'upload',
-                  defaultModuleForUpload,
-                  selectedAlbumId !== 'all' ? selectedAlbumId : undefined
-                )
+                handleOpenUploadModal({
+                  mode: 'upload',
+                  destinationMode: destinationModeForCurrentView,
+                  targetModule: defaultModuleForUpload,
+                  targetAlbumId: currentPhotoAlbumId,
+                })
               }
-              className="h-11 px-5 rounded-xl bg-teal-500 text-slate-950 text-sm sm:text-base font-bold hover:bg-teal-400 flex items-center gap-2 cursor-pointer shrink-0 shadow-xs"
+              className="btn-accent h-11 px-4 sm:px-5 rounded-2xl text-sm sm:text-base font-bold flex items-center gap-2 cursor-pointer shrink-0"
             >
               <Plus className="w-5 h-5 stroke-[2.5]" />
-              <span>העלאת קובץ</span>
+              <span className="hidden sm:inline">העלאת קובץ</span>
+              <span className="sm:hidden">העלאה</span>
             </button>
           </div>
         </header>
 
-        {/* Main Content: Just a Simple Search Box (if items exist) and the Files List */}
+        {/* Main Content: Search (if items exist) and the Files List */}
         <main className="flex-1 max-w-4xl w-full mx-auto px-4 sm:px-8 py-6 space-y-6">
           {(items.length > 0 || searchQuery) && (
             <div className="relative">
@@ -346,14 +385,22 @@ export default function SmartVaultCRMPage() {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="חיפוש קובץ לפי שם, אלבום או תאריך..."
-                className="w-full h-12 pr-12 pl-4 rounded-2xl border border-slate-200 bg-white text-base text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900"
+                className="w-full h-12 pr-12 pl-4 rounded-2xl glass text-base text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-mint-400/60 focus:bg-white/[0.07] transition-colors"
               />
             </div>
           )}
 
           <section aria-label="רשימת קבצים">
             {!isLoaded ? (
-              <div className="p-12 text-center text-slate-400 text-sm">טוען...</div>
+              <div className="space-y-3" aria-label="טוען קבצים">
+                {[0, 1, 2].map((i) => (
+                  <div
+                    key={i}
+                    className="glass rounded-3xl h-20 animate-pulse"
+                    style={{ animationDelay: `${i * 120}ms` }}
+                  />
+                ))}
+              </div>
             ) : (
               <VaultItemsView
                 items={filteredItems}
@@ -369,12 +416,13 @@ export default function SmartVaultCRMPage() {
                 onSelectItem={(item) => setSelectedItem(item)}
                 onDeleteItem={handleDeleteItem}
                 onOpenUpload={(mode, targetAlbumId) =>
-                  handleOpenUploadModal(
-                    mode || 'upload',
-                    targetAlbumId ? 'photos' : defaultModuleForUpload,
-                    targetAlbumId ||
-                      (selectedAlbumId !== 'all' ? selectedAlbumId : undefined)
-                  )
+                  handleOpenUploadModal({
+                    mode: mode || 'upload',
+                    destinationMode:
+                      targetAlbumId || activeTab !== 'all' ? 'fixed' : 'auto',
+                    targetModule: targetAlbumId ? 'photos' : defaultModuleForUpload,
+                    targetAlbumId: targetAlbumId || currentPhotoAlbumId,
+                  })
                 }
               />
             )}
@@ -385,14 +433,18 @@ export default function SmartVaultCRMPage() {
       {/* Simple 3-Step Upload Modal */}
       <UploadShareModal
         isOpen={uploadModalOpen}
-        initialMode={uploadModalMode}
-        defaultModule={defaultModuleForUpload}
+        initialMode={uploadContext.mode}
+        destinationMode={uploadContext.destinationMode}
+        defaultModule={uploadContext.targetModule}
         albums={albums}
-        defaultAlbumId={selectedAlbumId !== 'all' ? selectedAlbumId : undefined}
-        incomingShareDraft={incomingShareDraft}
+        defaultAlbumId={uploadContext.targetAlbumId}
+        incomingShareDraft={uploadContext.incomingShareDraft}
         onClose={() => {
           setUploadModalOpen(false);
-          setIncomingShareDraft(null);
+          setUploadContext((current) => ({
+            ...current,
+            incomingShareDraft: null,
+          }));
         }}
         onCreateAlbum={handleCreateAlbum}
         onSaveItem={handleSaveNewItem}
@@ -417,11 +469,11 @@ export default function SmartVaultCRMPage() {
         isIOS={isIOS}
         onInstall={install}
         onTryMobileShare={() =>
-          handleOpenUploadModal(
-            'upload',
-            activeTab === 'all' ? 'photos' : activeTab,
-            selectedAlbumId !== 'all' ? selectedAlbumId : undefined
-          )
+          handleOpenUploadModal({
+            mode: 'simulate-share',
+            destinationMode: 'choose',
+            targetModule: defaultModuleForUpload,
+          })
         }
       />
     </div>

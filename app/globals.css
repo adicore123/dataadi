@@ -1,7 +1,154 @@
 @import "tailwindcss";
 
-/* Keep production builds independent from Google Fonts network availability. */
+/*
+ * Smart Vault — Design System "Vault Dark Premium 2026"
+ * Deep-night canvas + aurora glow, glassmorphism surfaces,
+ * emerald→teal accent gradient, Swiss-minimal typography.
+ */
+
 @theme {
-  --font-sans: Arial, "Noto Sans Hebrew", sans-serif;
-  --font-mono: "Cascadia Mono", Consolas, monospace;
+  /* Local-first font stack: uses Inter when present, degrades gracefully. */
+  --font-sans: Inter, "Segoe UI", Arial, "Noto Sans Hebrew", sans-serif;
+  --font-mono: "Cascadia Mono", Consolas, ui-monospace, monospace;
+
+  /* Brand ramp */
+  --color-vault-950: #060b16;
+  --color-vault-900: #0b1120;
+  --color-vault-850: #101a2e;
+  --color-vault-800: #16223a;
+  --color-vault-700: #1f2f4d;
+
+  --color-mint-300: #6ee7b7;
+  --color-mint-400: #34d399;
+  --color-mint-500: #10b981;
+
+  --radius-4xl: 1.75rem;
+  --radius-5xl: 2rem;
+
+  --shadow-glow: 0 8px 32px -8px rgb(52 211 153 / 0.35);
+  --shadow-card: 0 1px 0 0 rgb(255 255 255 / 0.04) inset, 0 12px 32px -16px rgb(0 0 0 / 0.6);
+}
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    background-color: var(--color-vault-950);
+    color: var(--color-slate-100);
+    -webkit-tap-highlight-color: transparent;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Keyboard users always get a visible, on-brand focus ring. */
+  :focus-visible {
+    outline: 2px solid var(--color-mint-400);
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+
+  ::selection {
+    background: var(--color-mint-500);
+    color: #041014;
+  }
+
+  /* Slim, on-brand scrollbars */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(255 255 255 / 0.14) transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  *::-webkit-scrollbar-thumb {
+    background: rgb(255 255 255 / 0.14);
+    border-radius: 999px;
+  }
+  *::-webkit-scrollbar-thumb:hover {
+    background: rgb(255 255 255 / 0.22);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@layer utilities {
+  /* Fixed aurora canvas behind the app — the "premium 2026" ambience. */
+  .aurora-canvas {
+    background:
+      radial-gradient(52rem 34rem at 88% -8%, rgb(16 185 129 / 0.16), transparent 60%),
+      radial-gradient(44rem 30rem at -12% 24%, rgb(56 130 246 / 0.12), transparent 60%),
+      radial-gradient(40rem 40rem at 50% 118%, rgb(109 40 217 / 0.10), transparent 62%),
+      linear-gradient(180deg, #0b1120 0%, #060b16 100%);
+  }
+
+  /* Frosted glass surface (cards, sheets, docks). */
+  .glass {
+    background: rgb(255 255 255 / 0.045);
+    border: 1px solid rgb(255 255 255 / 0.08);
+    backdrop-filter: blur(18px) saturate(140%);
+    -webkit-backdrop-filter: blur(18px) saturate(140%);
+  }
+
+  .glass-strong {
+    background: rgb(13 20 36 / 0.82);
+    border: 1px solid rgb(255 255 255 / 0.09);
+    backdrop-filter: blur(24px) saturate(150%);
+    -webkit-backdrop-filter: blur(24px) saturate(150%);
+  }
+
+  /* Signature accent gradient for primary actions. */
+  .btn-accent {
+    background-image: linear-gradient(135deg, #6ee7b7 0%, #2dd4bf 55%, #34d399 100%);
+    color: #041014;
+    box-shadow: 0 10px 32px -12px rgb(52 211 153 / 0.55);
+    transition: transform 180ms ease, box-shadow 180ms ease, filter 180ms ease;
+  }
+  .btn-accent:hover {
+    filter: brightness(1.06);
+    box-shadow: 0 14px 40px -12px rgb(52 211 153 / 0.65);
+  }
+  .btn-accent:active {
+    transform: scale(0.97);
+  }
+
+  /* Hairline top highlight used on elevated cards. */
+  .card-sheen {
+    box-shadow:
+      inset 0 1px 0 0 rgb(255 255 255 / 0.06),
+      0 16px 40px -20px rgb(0 0 0 / 0.7);
+  }
+
+  .text-gradient {
+    background-image: linear-gradient(120deg, #e2e8f0 20%, #6ee7b7 90%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  /* Safe-area helpers for iOS PWA (standalone + browser). */
+  .pb-safe {
+    padding-bottom: max(env(safe-area-inset-bottom), 0.5rem);
+  }
+  .pt-safe {
+    padding-top: env(safe-area-inset-top);
+  }
+
+  /* Bottom-sheet drag affordance. */
+  .sheet-handle {
+    width: 2.75rem;
+    height: 0.3rem;
+    border-radius: 999px;
+    background: rgb(255 255 255 / 0.18);
+  }
 }
