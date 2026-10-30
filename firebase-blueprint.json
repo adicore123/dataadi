@@ -1,0 +1,168 @@
+{
+  "entities": {
+    "PhotoAlbum": {
+      "title": "PhotoAlbum",
+      "description": "A user-created photo album inside the Photos module.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "description": "The UID of the authenticated owner.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "name": {
+          "type": "string",
+          "description": "The display name of the photo album.",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "createdAtIso": {
+          "type": "string",
+          "description": "ISO timestamp string for deterministic UI display.",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the album was created."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the album was last updated."
+        }
+      },
+      "required": ["ownerId", "name", "createdAtIso", "createdAt", "updatedAt"]
+    },
+    "VaultItem": {
+      "title": "VaultItem",
+      "description": "A document, photo, or voice recording uploaded or shared by the user.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "description": "The UID of the authenticated owner.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "title": {
+          "type": "string",
+          "description": "The user-provided title of the item.",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "module": {
+          "type": "string",
+          "description": "The target module: documents, photos, or recordings.",
+          "enum": ["documents", "photos", "recordings"]
+        },
+        "albumId": {
+          "type": "string",
+          "description": "The ID of the photo album (empty string if not in an album).",
+          "maxLength": 128
+        },
+        "albumName": {
+          "type": "string",
+          "description": "The display name of the photo album (empty string if not in an album).",
+          "maxLength": 120
+        },
+        "createdAtIso": {
+          "type": "string",
+          "description": "ISO timestamp string when uploaded.",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "formattedDate": {
+          "type": "string",
+          "description": "Formatted date DD.MM.YYYY.",
+          "minLength": 1,
+          "maxLength": 32
+        },
+        "formattedTime": {
+          "type": "string",
+          "description": "Formatted time HH:MM.",
+          "minLength": 1,
+          "maxLength": 32
+        },
+        "fileName": {
+          "type": "string",
+          "description": "Original file name.",
+          "minLength": 1,
+          "maxLength": 255
+        },
+        "fileSize": {
+          "type": "number",
+          "description": "File size in bytes."
+        },
+        "mimeType": {
+          "type": "string",
+          "description": "MIME type of the file.",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "dataUrl": {
+          "type": "string",
+          "description": "Compressed base64 or data URL for preview/playback (up to 750KB).",
+          "maxLength": 780000
+        },
+        "durationSec": {
+          "type": "number",
+          "description": "Audio duration in seconds (0 for non-audio)."
+        },
+        "notes": {
+          "type": "string",
+          "description": "Optional notes or summary.",
+          "maxLength": 1000
+        },
+        "source": {
+          "type": "string",
+          "description": "Source of the item.",
+          "enum": ["upload", "mobile-share", "voice-recorder"]
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp on creation."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp on update."
+        }
+      },
+      "required": [
+        "ownerId",
+        "title",
+        "module",
+        "albumId",
+        "albumName",
+        "createdAtIso",
+        "formattedDate",
+        "formattedTime",
+        "fileName",
+        "fileSize",
+        "mimeType",
+        "dataUrl",
+        "durationSec",
+        "notes",
+        "source",
+        "createdAt",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/photo_albums/{albumId}": {
+      "schema": { "$ref": "#/entities/PhotoAlbum" },
+      "description": "Stores user-created photo albums."
+    },
+    "/vault_items/{itemId}": {
+      "schema": { "$ref": "#/entities/VaultItem" },
+      "description": "Stores documents, photos (linked to albums), and voice recordings."
+    }
+  }
+}

@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <defs>
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#0F172A" />
+      <stop offset="55%" stop-color="#1E293B" />
+      <stop offset="100%" stop-color="#0F172A" />
+    </linearGradient>
+    <linearGradient id="tealAccent" x1="120" y1="120" x2="400" y2="400" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#2DD4BF" />
+      <stop offset="100%" stop-color="#0D9488" />
+    </linearGradient>
+    <linearGradient id="amberAccent" x1="160" y1="100" x2="360" y2="300" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FBBF24" />
+      <stop offset="100%" stop-color="#D97706" />
+    </linearGradient>
+  </defs>
+
+  <!-- Rounded Squircle Background -->
+  <rect width="512" height="512" rx="112" fill="url(#bgGrad)" />
+  <rect x="16" y="16" width="480" height="480" rx="98" stroke="#334155" stroke-width="2" stroke-opacity="0.6" />
+
+  <!-- Top Module Card: Documents (Amber) -->
+  <rect x="136" y="102" width="240" height="140" rx="22" fill="url(#amberAccent)" opacity="0.92" />
+  <line x1="172" y1="136" x2="268" y2="136" stroke="#0F172A" stroke-width="10" stroke-linecap="round" opacity="0.45" />
+
+  <!-- Middle Module Card: Photos (White/Slate) -->
+  <rect x="116" y="146" width="280" height="160" rx="24" fill="#F8FAFC" />
+  <circle cx="172" cy="190" r="14" fill="#0D9488" />
+  <path d="M142 246L194 198L238 236L294 182L362 246H142Z" fill="#CBD5E1" />
+
+  <!-- Front Vault Folder: Teal Main Hub with Audio Wave & Lock -->
+  <path d="M92 224C92 206.327 106.327 192 124 192H214L246 224H388C405.673 224 420 238.327 420 256V376C420 398.091 402.091 416 380 416H132C109.909 416 92 398.091 92 376V224Z" fill="url(#tealAccent)" />
+
+  <!-- Audio Waveform & Vault Emblem on Front Folder -->
+  <rect x="180" y="302" width="12" height="44" rx="6" fill="#0F172A" />
+  <rect x="208" y="280" width="12" height="88" rx="6" fill="#0F172A" />
+  <rect x="236" y="264" width="12" height="120" rx="6" fill="#FFFFFF" />
+  <rect x="264" y="286" width="12" height="76" rx="6" fill="#FFFFFF" />
+  <rect x="292" y="272" width="12" height="104" rx="6" fill="#0F172A" />
+  <rect x="320" y="302" width="12" height="44" rx="6" fill="#0F172A" />
+</svg>

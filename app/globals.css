@@ -1,0 +1,7 @@
+@import "tailwindcss";
+
+/* Keep production builds independent from Google Fonts network availability. */
+@theme {
+  --font-sans: Arial, "Noto Sans Hebrew", sans-serif;
+  --font-mono: "Cascadia Mono", Consolas, monospace;
+}
