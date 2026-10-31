@@ -93,11 +93,13 @@ export default function SmartVaultCRMPage() {
   const [pwaModalOpen, setPwaModalOpen] = useState(false);
   const [shareNotice, setShareNotice] = useState<string | null>(null);
   const [apkVersion, setApkVersion] = useState<string | null>(null);
+  const [shareDiag, setShareDiag] = useState<string | null>(null);
 
   // Show which installed APK build last delivered a share (diagnostics).
   useEffect(() => {
     try {
       setApkVersion(window.localStorage.getItem('apkBuild'));
+      setShareDiag(window.localStorage.getItem('lastShareDiag'));
     } catch {
       // storage unavailable
     }
@@ -129,10 +131,18 @@ export default function SmartVaultCRMPage() {
         // The APK appends its build version to share URLs — remember it so
         // the sidebar can show which APK build is installed (diagnostics).
         const apkBuild = params.get('v');
+        const shareErr = params.get('err');
         if (apkBuild) {
           setApkVersion(apkBuild);
           try {
             window.localStorage.setItem('apkBuild', apkBuild);
+            if (shareErr) {
+              window.localStorage.setItem('lastShareDiag', `${apkBuild} · ${shareErr}`);
+              setShareDiag(`${apkBuild} · ${shareErr}`);
+            } else {
+              window.localStorage.removeItem('lastShareDiag');
+              setShareDiag(null);
+            }
           } catch {
             // storage unavailable — diagnostics only, ignore
           }
@@ -141,11 +151,22 @@ export default function SmartVaultCRMPage() {
         // (server fallback route or a failed service-worker save). Open the
         // modal with no preselected module and ask the user to attach the
         // file manually.
+        // Failure codes reported by the APK (ShareSinkActivity) — mapped to
+        // explicit reasons so on-device screenshots pinpoint the failing step.
+        const SHARE_ERR_REASONS: Record<string, string> = {
+          nos: 'השיתוף לא כלל קובץ מצורף',
+          read: 'קריאת הקובץ מהאפליקציה המשתפת נכשלה',
+          size: 'הקובץ גדול מ-25MB ולא ניתן להעברה אוטומטית',
+          srv: 'שרת ההעברה המקומי לא עלה',
+          'old-hook': 'הופעל מנגנון שיתוף ישן (עדכן/י את האפליקציה)',
+        };
         const openShareRecovery = (fileName?: string | null, reason?: string) => {
           if (!mounted) return;
+          const errCode = new URLSearchParams(window.location.search).get('err');
+          const errReason = reason || (errCode ? SHARE_ERR_REASONS[errCode] : undefined);
           setShareNotice(
-            reason
-              ? `${reason} — בחר/י את הקובץ ידנית בשלב 1 ובחר/י לאיזה מודול להכניס אותו`
+            errReason
+              ? `${errReason} — בחר/י את הקובץ ידנית בשלב 1 ובחר/י לאיזה מודול להכניס אותו`
               : 'הקובץ המשותף לא נקלט אוטומטית — בחר/י אותו בשלב 1 ובחר/י לאיזה מודול להכניס אותו'
           );
           setUploadContext({
@@ -235,12 +256,20 @@ export default function SmartVaultCRMPage() {
                 },
               });
               setUploadModalOpen(true);
-            } catch {
+            } catch (err) {
               if (mounted) {
+                const detail = err instanceof Error && err.message
+                  ? ` (${err.message.slice(0, 60)})`
+                  : '';
                 openShareRecovery(
                   pickupName,
-                  'העברה האוטומטית של הקובץ מהשיתוף נכשלה בדרך (האנדרואיד עצר אותה)'
+                  `העברת הקובץ האוטומטית נכשלה${detail}`
                 );
+                try {
+                  window.localStorage.setItem('lastShareDiag', `${apkBuild || '?'} · fetch`);
+                } catch {
+                  // diagnostics only
+                }
               }
             }
           }
@@ -409,7 +438,7 @@ export default function SmartVaultCRMPage() {
       {/* Right-Hand Glass Sidebar */}
       <SidebarNav
         activeTab={activeTab}
-        apkVersion={apkVersion}
+        apkVersion={shareDiag ?? apkVersion}
         onSelectTab={setActiveTab}
         counts={counts}
         albums={albums}
