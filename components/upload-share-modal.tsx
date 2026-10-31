@@ -315,7 +315,9 @@ export function UploadShareModal({
     // file would fake it (this used to silently substitute a demo beep /
     // placeholder image). Block instead and tell the user.
     if (!dataUrl && (targetModule === 'photos' || targetModule === 'recordings')) {
-      setErrorMsg('נא לצרף את הקובץ בשלב 1 — בלי קובץ לא ניתן לשמור תמונה או הקלטה');
+      setErrorMsg(
+        'הקובץ עצמו עדיין לא נבחר! גלול לשלב 1 בראש הטופס ← לחץ על המסגרת הכתומה ← בחר את הקובץ מהטלפון ← ואז שמור'
+      );
       return;
     }
 
