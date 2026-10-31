@@ -89,6 +89,7 @@ export default function SmartVaultCRMPage() {
     incomingShareDraft: null,
   });
   const [selectedItem, setSelectedItem] = useState<VaultItem | null>(null);
+  const [previewStartInEdit, setPreviewStartInEdit] = useState(false);
   const [pwaModalOpen, setPwaModalOpen] = useState(false);
   const [shareNotice, setShareNotice] = useState<string | null>(null);
   const [apkVersion, setApkVersion] = useState<string | null>(null);
@@ -621,6 +622,10 @@ export default function SmartVaultCRMPage() {
                 onCreateAlbum={handleCreateAlbum}
                 onDeleteAlbum={handleDeleteAlbum}
                 onSelectItem={(item) => setSelectedItem(item)}
+                onEditItem={(item) => {
+                  setSelectedItem(item);
+                  setPreviewStartInEdit(true);
+                }}
                 onDeleteItem={handleDeleteItem}
                 onOpenUpload={(mode, targetAlbumId) =>
                   handleOpenUploadModal({
@@ -663,7 +668,11 @@ export default function SmartVaultCRMPage() {
       <ItemPreviewModal
         item={selectedItem}
         albums={albums}
-        onClose={() => setSelectedItem(null)}
+        initialEditing={previewStartInEdit}
+        onClose={() => {
+          setSelectedItem(null);
+          setPreviewStartInEdit(false);
+        }}
         onCreateAlbum={handleCreateAlbum}
         onUpdateItem={handleUpdateItem}
         onDeleteItem={handleDeleteItem}

@@ -21,10 +21,14 @@ import {
   formatFileSizeHe,
   formatDuration,
 } from '@/lib/vault-logic';
+import { shareVaultItem } from '@/lib/share';
+import { WhatsAppIcon } from '@/components/whatsapp-icon';
 
 interface ItemPreviewModalProps {
   item: VaultItem | null;
   albums: PhotoAlbum[];
+  /** Open straight into edit mode (quick-edit pencil buttons). */
+  initialEditing?: boolean;
   onClose: () => void;
   onCreateAlbum: (name: string) => Promise<PhotoAlbum>;
   onUpdateItem: (
@@ -43,6 +47,7 @@ interface ItemPreviewModalProps {
 export function ItemPreviewModal({
   item,
   albums,
+  initialEditing = false,
   onClose,
   onCreateAlbum,
   onUpdateItem,
@@ -57,14 +62,14 @@ export function ItemPreviewModal({
 
   useEffect(() => {
     if (item) {
-      setIsEditing(false);
+      setIsEditing(initialEditing);
       setEditTitle(item.title);
       setEditModule(item.module);
       setEditAlbumId(item.albumId || '');
       setNewAlbumName('');
       setEditNotes(item.notes || '');
     }
-  }, [item]);
+  }, [item, initialEditing]);
 
   if (!item) return null;
 
@@ -394,6 +399,15 @@ export function ItemPreviewModal({
                 <span>הורדת קובץ</span>
               </a>
             )}
+
+            <button
+              type="button"
+              onClick={() => void shareVaultItem(item)}
+              className="min-h-10 py-2 px-3.5 rounded-xl glass text-xs font-semibold text-slate-700 hover:border-[#25D366]/40 hover:bg-[#25D366]/10 transition flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+            >
+              <WhatsAppIcon className="w-3.5 h-3.5" />
+              <span>שיתוף בוואטסאפ</span>
+            </button>
           </div>
 
           <button

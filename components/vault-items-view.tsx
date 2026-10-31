@@ -10,6 +10,7 @@ import {
   Plus,
   Folder,
   FolderPlus,
+  Edit3,
 } from 'lucide-react';
 import {
   VaultItem,
@@ -17,6 +18,8 @@ import {
   FilterTab,
   MODULE_META,
 } from '@/lib/vault-logic';
+import { shareVaultItem } from '@/lib/share';
+import { WhatsAppIcon } from '@/components/whatsapp-icon';
 
 interface VaultItemsViewProps {
   items: VaultItem[];
@@ -30,6 +33,7 @@ interface VaultItemsViewProps {
   onCreateAlbum: (name: string) => Promise<PhotoAlbum>;
   onDeleteAlbum: (albumId: string) => void;
   onSelectItem: (item: VaultItem) => void;
+  onEditItem: (item: VaultItem) => void;
   onDeleteItem: (id: string) => void;
   onOpenUpload: (
     mode?: 'upload' | 'record' | 'simulate-share',
@@ -49,6 +53,7 @@ export function VaultItemsView({
   onCreateAlbum,
   onDeleteAlbum,
   onSelectItem,
+  onEditItem,
   onDeleteItem,
   onOpenUpload,
 }: VaultItemsViewProps) {
@@ -289,6 +294,22 @@ export function VaultItemsView({
                 </button>
 
                 <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => onEditItem(item)}
+                    aria-label={`עריכת ${item.title}`}
+                    className="w-10 h-10 flex items-center justify-center rounded-xl glass text-slate-500 hover:text-mint-700 hover:border-mint-500/30 hover:bg-mint-500/10 transition cursor-pointer"
+                  >
+                    <Edit3 className="w-4 h-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void shareVaultItem(item)}
+                    aria-label={`שיתוף ${item.title} בוואטסאפ`}
+                    className="w-10 h-10 flex items-center justify-center rounded-xl glass text-slate-500 hover:border-[#25D366]/40 hover:bg-[#25D366]/10 transition cursor-pointer"
+                  >
+                    <WhatsAppIcon className="w-[18px] h-[18px]" />
+                  </button>
                   {item.dataUrl && (
                     <a
                       href={item.dataUrl}
@@ -404,6 +425,24 @@ export function VaultItemsView({
                 className="min-h-10 px-4 py-2 rounded-xl glass text-sm font-bold text-slate-800 hover:bg-slate-900/5 active:scale-95 transition cursor-pointer"
               >
                 פתח
+              </button>
+
+              <button
+                type="button"
+                onClick={() => onEditItem(item)}
+                aria-label={`עריכת ${item.title}`}
+                className="w-11 h-11 flex items-center justify-center rounded-xl glass text-slate-500 hover:text-mint-700 hover:border-mint-500/30 hover:bg-mint-500/10 transition cursor-pointer"
+              >
+                <Edit3 className="w-4 h-4" />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => void shareVaultItem(item)}
+                aria-label={`שיתוף ${item.title} בוואטסאפ`}
+                className="w-11 h-11 flex items-center justify-center rounded-xl glass text-slate-500 hover:border-[#25D366]/40 hover:bg-[#25D366]/10 transition cursor-pointer"
+              >
+                <WhatsAppIcon className="w-[18px] h-[18px]" />
               </button>
 
               {item.dataUrl && (

@@ -321,6 +321,17 @@ export function UploadShareModal({
       return;
     }
 
+    // Non-image files above the storage ceiling (base64 dataUrl > 760K chars)
+    // would be silently stripped by ensureCloudSafeDataUrl and saved as an
+    // EMPTY item. Block the save with a clear reason instead. Images are
+    // canvas-compressed downstream and are not affected by this check.
+    if (dataUrl && !dataUrl.startsWith('data:image') && dataUrl.length > 760_000) {
+      setErrorMsg(
+        'הקובץ גדול מדי לשמירה בכספת (מעל ~550KB לקבצים שאינם תמונות) — התוכן היה נשמר ריק. דחוס/י או קצר/י את הקובץ ונסה שוב'
+      );
+      return;
+    }
+
     setErrorMsg(null);
     setIsSubmitting(true);
 
