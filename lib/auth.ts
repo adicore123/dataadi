@@ -70,6 +70,11 @@ export async function clearSessionCookie(): Promise<void> {
   store.delete(SESSION_COOKIE);
 }
 
+/** True when the failure is a server misconfiguration (missing AUTH_SECRET). */
+export function isConfigError(error: unknown): boolean {
+  return error instanceof Error && error.message.includes('AUTH_SECRET');
+}
+
 /** Returns the signed-in user, or null. Never throws on bad/expired tokens. */
 export async function getSessionUser(): Promise<SessionUser | null> {
   try {

@@ -5,6 +5,7 @@ import {
   normalizeEmail,
   setSessionCookie,
   createSessionToken,
+  isConfigError,
 } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
@@ -40,7 +41,11 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('login error:', error);
     return NextResponse.json(
-      { error: 'שגיאת שרת בהתחברות' },
+      {
+        error: isConfigError(error)
+          ? 'שגיאת תצורה בשרת (AUTH_SECRET) — פנה למנהל'
+          : 'שגיאת שרת בהתחברות',
+      },
       { status: 500 }
     );
   }
