@@ -1,6 +1,0 @@
-{
-  "name": "כספת ניהול - מסמכים, תמונות והקלטות",
-  "description": "מערכת ניהול פשוטה בסגנון CRM להעלאה, שיתוף מהמובייל ותיעוד אוטומטי לפי תאריך ושעה של מסמכים חשובים, תמונות והקלטות קוליות.",
-  "requestFramePermissions": ["microphone", "camera"],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
-}

@@ -10,12 +10,7 @@ import {
   filterAndSortItems,
   computeModuleCounts,
   computeAlbumPhotoCounts,
-  getInitialSeedItems,
 } from './vault-logic.ts';
-
-test('getInitialSeedItems returns a 100% clean empty array', () => {
-  assert.deepEqual(getInitialSeedItems(), []);
-});
 
 test('detectModuleFromMime routes images, audio, and documents accurately', () => {
   assert.equal(detectModuleFromMime('image/jpeg', 'photo.jpg'), 'photos');
@@ -31,7 +26,6 @@ test('formatTimestampHe generates deterministic DD.MM.YYYY and HH:MM strings', (
   const result = formatTimestampHe(iso);
   assert.equal(result.formattedDate, '30.10.2026');
   assert.equal(result.formattedTime, '14:07');
-  assert.equal(result.fullLabel, '30.10.2026 · 14:07');
 });
 
 test('createPhotoAlbum validates album name and assigns ID and date', () => {
@@ -130,6 +124,12 @@ test('filterAndSortItems filters by module, photo albumId, and search query', ()
   assert.equal(modCounts.photos, 2);
   assert.equal(modCounts.documents, 1);
   assert.equal(modCounts.recordings, 0);
+
+  const searchHit = filterAndSortItems(allItems, {
+    moduleFilter: 'all',
+    searchQuery: 'אתר בנייה',
+  });
+  assert.equal(searchHit.length, 1);
 });
 
 test('formatFileSizeHe and formatDuration format numbers cleanly', () => {

@@ -1,7 +1,7 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { getVaultItemsCollection } from '@/lib/mongo';
-import { getSessionUser } from '@/lib/auth';
 import { parseVaultItemUpdate, DOC_ID_RE } from '@/lib/vault-validation';
+import { requireUser, jsonError, jsonOk, serverError, parseJsonBody } from '@/lib/api-helpers';
 
 export const dynamic = 'force-dynamic';
 
@@ -9,51 +9,44 @@ type RouteContext = { params: Promise<{ id: string }> };
 
 /** PATCH /api/vault-items/[id] — title/module/album/notes only. */
 export async function PATCH(request: NextRequest, context: RouteContext) {
-  const user = await getSessionUser();
-  if (!user) {
-    return NextResponse.json({ error: 'נדרשת התחברות' }, { status: 401 });
-  }
+  const email = await requireUser();
+  if (!email) return jsonError('נדרשת התחברות', 401);
   const { id } = await context.params;
   if (!DOC_ID_RE.test(id)) {
-    return NextResponse.json({ error: 'מזהה פריט לא תקין' }, { status: 400 });
+    return jsonError('מזהה פריט לא תקין', 400);
   }
   try {
-    const body = await request.json().catch(() => null);
-    const parsed = parseVaultItemUpdate(body);
+    const parsed = parseVaultItemUpdate(await parseJsonBody(request));
     if ('error' in parsed) {
-      return NextResponse.json({ error: parsed.error }, { status: 400 });
+      return jsonError(parsed.error, 400);
     }
     const itemsCol = await getVaultItemsCollection();
     const result = await itemsCol.updateOne(
-      { _id: id, ownerId: user.email },
+      { _id: id, ownerId: email },
       { $set: { ...parsed, updatedAt: new Date() } }
     );
     if (result.matchedCount === 0) {
-      return NextResponse.json({ error: 'הפריט לא נמצא' }, { status: 404 });
+      return jsonError('הפריט לא נמצא', 404);
     }
-    return NextResponse.json({ ok: true });
+    return jsonOk();
   } catch (error) {
-    console.error('vault-items PATCH error:', error);
-    return NextResponse.json({ error: 'שגיאת שרת בעדכון הפריט' }, { status: 500 });
+    return serverError('vault-items PATCH', error);
   }
 }
 
 /** DELETE /api/vault-items/[id] — idempotent, owner-scoped. */
 export async function DELETE(_request: NextRequest, context: RouteContext) {
-  const user = await getSessionUser();
-  if (!user) {
-    return NextResponse.json({ error: 'נדרשת התחברות' }, { status: 401 });
-  }
+  const email = await requireUser();
+  if (!email) return jsonError('נדרשת התחברות', 401);
   const { id } = await context.params;
   if (!DOC_ID_RE.test(id)) {
-    return NextResponse.json({ error: 'מזהה פריט לא תקין' }, { status: 400 });
+    return jsonError('מזהה פריט לא תקין', 400);
   }
   try {
     const itemsCol = await getVaultItemsCollection();
-    await itemsCol.deleteOne({ _id: id, ownerId: user.email });
-    return NextResponse.json({ ok: true });
+    await itemsCol.deleteOne({ _id: id, ownerId: email });
+    return jsonOk();
   } catch (error) {
-    console.error('vault-items DELETE error:', error);
-    return NextResponse.json({ error: 'שגיאת שרת במחיקת הפריט' }, { status: 500 });
+    return serverError('vault-items DELETE', error);
   }
 }

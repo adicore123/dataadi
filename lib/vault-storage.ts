@@ -2,17 +2,18 @@
 
 import {
   VaultItem,
+  VaultItemUpdates,
   PhotoAlbum,
-  ModuleType,
   formatTimestampHe,
+  isModuleType,
+  isVaultItemSource,
 } from './vault-logic';
 
 /**
  * Vault storage layer — local-first over IndexedDB (+localStorage
  * fallback), with cloud sync through the app's own API routes
- * (MongoDB Atlas behind them). Replaces the direct Firestore client
- * SDK access: every cloud operation is now a same-origin fetch, and
- * a 401 simply means "not signed in" — local-only mode continues.
+ * (MongoDB Atlas behind them). A 401 simply means "not signed in" —
+ * local-only mode continues.
  */
 
 const CLEAN_DB_NAME = 'smart_vault_crm_clean_v2';
@@ -43,20 +44,27 @@ export interface IncomingSharedPayload {
   receivedAt: string;
 }
 
-function openCleanDB(): Promise<IDBDatabase> {
+/* ------------------------------------------------------------------ */
+/* Generic IndexedDB plumbing                                          */
+/* ------------------------------------------------------------------ */
+
+function openDB(
+  name: string,
+  version: number,
+  stores: string[]
+): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     if (typeof window === 'undefined' || !('indexedDB' in window)) {
       reject(new Error('IndexedDB not available'));
       return;
     }
-    const request = window.indexedDB.open(CLEAN_DB_NAME, CLEAN_DB_VERSION);
+    const request = window.indexedDB.open(name, version);
     request.onupgradeneeded = () => {
       const idb = request.result;
-      if (!idb.objectStoreNames.contains(ITEMS_STORE)) {
-        idb.createObjectStore(ITEMS_STORE, { keyPath: 'id' });
-      }
-      if (!idb.objectStoreNames.contains(ALBUMS_STORE)) {
-        idb.createObjectStore(ALBUMS_STORE, { keyPath: 'id' });
+      for (const store of stores) {
+        if (!idb.objectStoreNames.contains(store)) {
+          idb.createObjectStore(store, { keyPath: 'id' });
+        }
       }
     };
     request.onsuccess = () => resolve(request.result);
@@ -64,30 +72,28 @@ function openCleanDB(): Promise<IDBDatabase> {
   });
 }
 
-function openShareDB(): Promise<IDBDatabase> {
+function idbGetAll<T extends { id: string }>(db: IDBDatabase, store: string): Promise<T[]> {
   return new Promise((resolve, reject) => {
-    if (typeof window === 'undefined' || !('indexedDB' in window)) {
-      reject(new Error('IndexedDB not available'));
-      return;
-    }
-    const request = window.indexedDB.open(SHARE_DB_NAME, SHARE_DB_VERSION);
-    request.onupgradeneeded = () => {
-      const idb = request.result;
-      if (!idb.objectStoreNames.contains('vault_items')) {
-        idb.createObjectStore('vault_items', { keyPath: 'id' });
-      }
-      if (!idb.objectStoreNames.contains(SHARE_STORE)) {
-        idb.createObjectStore(SHARE_STORE, { keyPath: 'id' });
-      }
-    };
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
+    const req = db.transaction(store, 'readonly').objectStore(store).getAll();
+    req.onsuccess = () => resolve((req.result as T[]) || []);
+    req.onerror = () => reject(req.error);
   });
 }
 
-/**
- * Purges any legacy v1 mock/seed items so the workspace starts 100% clean.
- */
+function idbPutAll<T extends { id: string }>(db: IDBDatabase, store: string, rows: T[]): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(store, 'readwrite');
+    const objectStore = tx.objectStore(store);
+    objectStore.clear();
+    for (const row of rows) {
+      objectStore.put(row);
+    }
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+/** Purges any legacy v1 mock/seed items so the workspace starts clean. */
 function purgeLegacySeedStorage(): void {
   if (typeof window === 'undefined') return;
   try {
@@ -97,123 +103,88 @@ function purgeLegacySeedStorage(): void {
   }
 }
 
-export async function loadLocalVaultItems(): Promise<VaultItem[]> {
-  purgeLegacySeedStorage();
-  try {
-    const idb = await openCleanDB();
-    const items = await new Promise<VaultItem[]>((resolve, reject) => {
-      const tx = idb.transaction(ITEMS_STORE, 'readonly');
-      const store = tx.objectStore(ITEMS_STORE);
-      const req = store.getAll();
-      req.onsuccess = () => resolve(req.result || []);
-      req.onerror = () => reject(req.error);
-    });
-    if (Array.isArray(items) && items.length > 0) {
-      return items;
+/** IndexedDB first (clear+put), localStorage as fallback/mirror. */
+async function loadRows<T extends { id: string }>(
+  db: IDBDatabase | null,
+  store: string,
+  lsKey: string
+): Promise<T[]> {
+  if (db) {
+    try {
+      const rows = await idbGetAll<T>(db, store);
+      if (rows.length > 0) return rows;
+    } catch {
+      // fall through to localStorage
     }
-  } catch {
-    // fallback to localStorage
   }
-
   if (typeof window !== 'undefined') {
     try {
-      const raw = window.localStorage.getItem(LS_ITEMS_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw) as VaultItem[];
-        if (Array.isArray(parsed)) return parsed;
-      }
+      const raw = window.localStorage.getItem(lsKey);
+      const parsed = raw ? (JSON.parse(raw) as T[]) : [];
+      if (Array.isArray(parsed)) return parsed;
     } catch {
       // ignore
     }
   }
-
   return [];
 }
 
-export async function saveLocalVaultItems(items: VaultItem[]): Promise<void> {
+async function saveRows<T extends { id: string }>(
+  db: IDBDatabase | null,
+  store: string,
+  lsKey: string,
+  rows: T[]
+): Promise<void> {
   if (typeof window !== 'undefined') {
     try {
-      window.localStorage.setItem(LS_ITEMS_KEY, JSON.stringify(items));
+      window.localStorage.setItem(lsKey, JSON.stringify(rows));
     } catch {
       // Quota exceeded for large dataUrls in localStorage is handled by IndexedDB
     }
   }
-
-  try {
-    const idb = await openCleanDB();
-    await new Promise<void>((resolve, reject) => {
-      const tx = idb.transaction(ITEMS_STORE, 'readwrite');
-      const store = tx.objectStore(ITEMS_STORE);
-      store.clear();
-      for (const item of items) {
-        store.put(item);
-      }
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
-    });
-  } catch {
-    // ignore
+  if (db) {
+    try {
+      await idbPutAll(db, store, rows);
+    } catch {
+      // ignore — localStorage copy already saved
+    }
   }
+}
+
+async function withCleanDb<T>(fn: (db: IDBDatabase | null) => Promise<T>): Promise<T> {
+  try {
+    return await fn(await openDB(CLEAN_DB_NAME, CLEAN_DB_VERSION, [ITEMS_STORE, ALBUMS_STORE]));
+  } catch {
+    // No IndexedDB — run the same logic against localStorage only.
+    return await fn(null);
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Local persistence                                                   */
+/* ------------------------------------------------------------------ */
+
+export async function loadLocalVaultItems(): Promise<VaultItem[]> {
+  purgeLegacySeedStorage();
+  return withCleanDb((db) => loadRows<VaultItem>(db, ITEMS_STORE, LS_ITEMS_KEY));
+}
+
+export async function saveLocalVaultItems(items: VaultItem[]): Promise<void> {
+  await withCleanDb((db) => saveRows(db, ITEMS_STORE, LS_ITEMS_KEY, items));
 }
 
 export async function loadLocalPhotoAlbums(): Promise<PhotoAlbum[]> {
   purgeLegacySeedStorage();
-  try {
-    const idb = await openCleanDB();
-    const albums = await new Promise<PhotoAlbum[]>((resolve, reject) => {
-      const tx = idb.transaction(ALBUMS_STORE, 'readonly');
-      const store = tx.objectStore(ALBUMS_STORE);
-      const req = store.getAll();
-      req.onsuccess = () => resolve(req.result || []);
-      req.onerror = () => reject(req.error);
-    });
-    if (Array.isArray(albums) && albums.length > 0) {
-      return albums;
-    }
-  } catch {
-    // fallback to localStorage
-  }
-
-  if (typeof window !== 'undefined') {
-    try {
-      const raw = window.localStorage.getItem(LS_ALBUMS_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw) as PhotoAlbum[];
-        if (Array.isArray(parsed)) return parsed;
-      }
-    } catch {
-      // ignore
-    }
-  }
-
-  return [];
+  return withCleanDb((db) => loadRows<PhotoAlbum>(db, ALBUMS_STORE, LS_ALBUMS_KEY));
 }
 
 export async function saveLocalPhotoAlbums(albums: PhotoAlbum[]): Promise<void> {
-  if (typeof window !== 'undefined') {
-    try {
-      window.localStorage.setItem(LS_ALBUMS_KEY, JSON.stringify(albums));
-    } catch {
-      // ignore
-    }
-  }
-
-  try {
-    const idb = await openCleanDB();
-    await new Promise<void>((resolve, reject) => {
-      const tx = idb.transaction(ALBUMS_STORE, 'readwrite');
-      const store = tx.objectStore(ALBUMS_STORE);
-      store.clear();
-      for (const album of albums) {
-        store.put(album);
-      }
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
-    });
-  } catch {
-    // ignore
-  }
+  await withCleanDb((db) => saveRows(db, ALBUMS_STORE, LS_ALBUMS_KEY, albums));
 }
+
+/* ------------------------------------------------------------------ */
+/* Cloud-safe image compression                                        */
+/* ------------------------------------------------------------------ */
 
 /**
  * Compresses large image DataURLs on the client so cloud payloads stay
@@ -271,6 +242,10 @@ export async function ensureCloudSafeDataUrl(
   return dataUrl.length <= 760000 ? dataUrl : '';
 }
 
+/* ------------------------------------------------------------------ */
+/* Cloud API                                                           */
+/* ------------------------------------------------------------------ */
+
 /**
  * Same-origin JSON fetch against the vault API. Returns null on 401
  * (not signed in — caller silently stays local-only). Non-2xx answers
@@ -296,10 +271,66 @@ async function apiFetch(path: string, init?: RequestInit): Promise<Response | nu
 
 function reportCloudError(operation: string, path: string, error: unknown): never {
   const message = error instanceof Error ? error.message : String(error);
-  console.error(
-    `Cloud sync error: ${JSON.stringify({ operation, path, message })}`
-  );
+  console.error(`Cloud sync error: ${JSON.stringify({ operation, path, message })}`);
   throw new Error(`cloud-sync ${operation} ${path} failed: ${message}`);
+}
+
+/** Wire shape returned by GET /api/vault-items (our own server). */
+interface CloudItemDoc {
+  id: string;
+  title: string;
+  module: string;
+  albumId?: string;
+  albumName?: string;
+  createdAtIso: string;
+  formattedDate?: string;
+  formattedTime?: string;
+  fileName: string;
+  fileSize: number;
+  mimeType: string;
+  dataUrl?: string;
+  durationSec?: number;
+  notes?: string;
+  source?: string;
+}
+
+/** Wire shape returned by GET /api/photo-albums. */
+interface CloudAlbumDoc {
+  id: string;
+  name: string;
+  createdAtIso: string;
+}
+
+function mapCloudItem(d: CloudItemDoc): VaultItem {
+  const iso = d.createdAtIso || new Date().toISOString();
+  const ts = formatTimestampHe(iso);
+  return {
+    id: d.id,
+    title: d.title || '',
+    module: isModuleType(d.module) ? d.module : 'documents',
+    albumId: d.albumId || '',
+    albumName: d.albumName || '',
+    createdAt: iso,
+    formattedDate: d.formattedDate || ts.formattedDate,
+    formattedTime: d.formattedTime || ts.formattedTime,
+    fileName: d.fileName || 'file',
+    fileSize: Number(d.fileSize) || 0,
+    mimeType: d.mimeType || 'application/octet-stream',
+    dataUrl: d.dataUrl || undefined,
+    durationSec: Number(d.durationSec) > 0 ? Number(d.durationSec) : undefined,
+    notes: d.notes || undefined,
+    source: isVaultItemSource(d.source) ? d.source : 'upload',
+  };
+}
+
+function mapCloudAlbum(d: CloudAlbumDoc): PhotoAlbum {
+  const iso = d.createdAtIso || new Date().toISOString();
+  return {
+    id: d.id,
+    name: d.name || '',
+    createdAt: iso,
+    formattedDate: formatTimestampHe(iso).formattedDate,
+  };
 }
 
 /**
@@ -360,13 +391,7 @@ export async function saveVaultItemToDatabase(
  */
 export async function updateVaultItemInDatabase(
   id: string,
-  updates: {
-    title: string;
-    module: ModuleType;
-    albumId?: string;
-    albumName?: string;
-    notes?: string;
-  },
+  updates: VaultItemUpdates,
   currentItems: VaultItem[]
 ): Promise<VaultItem[]> {
   const cleanAlbumId = updates.module === 'photos' ? (updates.albumId || '').trim() : '';
@@ -479,70 +504,44 @@ export async function deletePhotoAlbumFromDatabase(
   return updatedLocal;
 }
 
-interface CloudItemDoc {
-  id: string;
-  title?: unknown;
-  module?: unknown;
-  albumId?: unknown;
-  albumName?: unknown;
-  createdAtIso?: unknown;
-  formattedDate?: unknown;
-  formattedTime?: unknown;
-  fileName?: unknown;
-  fileSize?: unknown;
-  mimeType?: unknown;
-  dataUrl?: unknown;
-  durationSec?: unknown;
-  notes?: unknown;
-  source?: unknown;
-}
-
-interface CloudAlbumDoc {
-  id: string;
-  name?: unknown;
-  createdAtIso?: unknown;
-}
-
-function mapCloudItem(d: CloudItemDoc): VaultItem {
-  const iso = typeof d.createdAtIso === 'string' ? d.createdAtIso : new Date().toISOString();
-  const ts = formatTimestampHe(iso);
-  return {
-    id: d.id,
-    title: String(d.title || ''),
-    module: (d.module as ModuleType) || 'documents',
-    albumId: d.albumId ? String(d.albumId) : '',
-    albumName: d.albumName ? String(d.albumName) : '',
-    createdAt: iso,
-    formattedDate: d.formattedDate ? String(d.formattedDate) : ts.formattedDate,
-    formattedTime: d.formattedTime ? String(d.formattedTime) : ts.formattedTime,
-    fileName: String(d.fileName || 'file'),
-    fileSize: Number(d.fileSize) || 0,
-    mimeType: String(d.mimeType || 'application/octet-stream'),
-    dataUrl: d.dataUrl ? String(d.dataUrl) : undefined,
-    durationSec: Number(d.durationSec) > 0 ? Number(d.durationSec) : undefined,
-    notes: d.notes ? String(d.notes) : undefined,
-    source: (d.source as VaultItem['source']) || 'upload',
-  };
-}
-
-function mapCloudAlbum(d: CloudAlbumDoc): PhotoAlbum {
-  const iso = typeof d.createdAtIso === 'string' ? d.createdAtIso : new Date().toISOString();
-  const { formattedDate } = formatTimestampHe(iso);
-  return {
-    id: d.id,
-    name: String(d.name || ''),
-    createdAt: iso,
-    formattedDate,
-  };
-}
+/* ------------------------------------------------------------------ */
+/* Sync engine                                                         */
+/* ------------------------------------------------------------------ */
 
 const SYNC_POLL_MS = 30_000;
+
+/** Merges cloud + local-only rows of one kind (cloud wins on conflicts). */
+async function mergeAndBackfill<T extends { id: string }>(
+  fetchCloud: () => Promise<T[]>,
+  loadLocal: () => Promise<T[]>,
+  saveLocal: (rows: T[]) => Promise<void>,
+  pushOne: (row: T, current: T[]) => Promise<unknown>,
+  onChange: (merged: T[]) => void,
+  isStopped: () => boolean
+): Promise<void> {
+  const cloudRows = await fetchCloud();
+  const localRows = await loadLocal();
+  const cloudIds = new Set(cloudRows.map((r) => r.id));
+
+  for (const row of localRows) {
+    if (!cloudIds.has(row.id)) {
+      try {
+        await pushOne(row, cloudRows);
+      } catch {
+        // ignore individual sync error
+      }
+    }
+  }
+
+  const merged = [...cloudRows, ...localRows.filter((r) => !cloudIds.has(r.id))];
+  await saveLocal(merged);
+  if (!isStopped()) onChange(merged);
+}
 
 /**
  * Keeps the signed-in user's vault in sync with the cloud: initial pull,
  * backfill of any local-only docs up to the cloud, then a poll every
- * 30 seconds plus a refresh whenever the tab regains focus. Replaces the
- * Firestore onSnapshot listeners (Atlas has no browser push).
+ * 30 seconds plus a refresh whenever the tab regains focus.
  */
 export function subscribeToUserVault(
   ownerId: string,
@@ -555,58 +554,35 @@ export function subscribeToUserVault(
   let stopped = false;
   let syncing = false;
 
-  const syncItems = async (): Promise<void> => {
-    const res = await apiFetch('/api/vault-items');
-    if (!res) return; // signed out mid-session
-    const cloudItems = ((await res.json()) as CloudItemDoc[]).map(mapCloudItem);
+  const syncItems = () =>
+    mergeAndBackfill(
+      async () => {
+        const res = await apiFetch('/api/vault-items');
+        if (!res) return []; // signed out mid-session
+        return ((await res.json()) as CloudItemDoc[]).map(mapCloudItem);
+      },
+      loadLocalVaultItems,
+      saveLocalVaultItems,
+      (item, current) => saveVaultItemToDatabase(item, current),
+      callbacks.onItemsChange,
+      () => stopped
+    );
 
-    // Sync any local unsynced items up to the cloud
-    const localItems = await loadLocalVaultItems();
-    const cloudIds = new Set(cloudItems.map((i) => i.id));
-    for (const localItem of localItems) {
-      if (!cloudIds.has(localItem.id)) {
-        try {
-          await saveVaultItemToDatabase(localItem, cloudItems);
-        } catch {
-          // ignore individual sync error
-        }
-      }
-    }
-
-    const merged = [
-      ...cloudItems,
-      ...localItems.filter((l) => !cloudIds.has(l.id)),
-    ];
-    await saveLocalVaultItems(merged);
-    if (!stopped) callbacks.onItemsChange(merged);
-  };
-
-  const syncAlbums = async (): Promise<void> => {
-    const res = await apiFetch('/api/photo-albums');
-    if (!res) return;
-    const cloudAlbums = ((await res.json()) as CloudAlbumDoc[])
-      .map(mapCloudAlbum)
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-
-    const localAlbums = await loadLocalPhotoAlbums();
-    const cloudAlbumIds = new Set(cloudAlbums.map((a) => a.id));
-    for (const localAlbum of localAlbums) {
-      if (!cloudAlbumIds.has(localAlbum.id)) {
-        try {
-          await savePhotoAlbumToDatabase(localAlbum, cloudAlbums);
-        } catch {
-          // ignore
-        }
-      }
-    }
-
-    const merged = [
-      ...cloudAlbums,
-      ...localAlbums.filter((l) => !cloudAlbumIds.has(l.id)),
-    ];
-    await saveLocalPhotoAlbums(merged);
-    if (!stopped) callbacks.onAlbumsChange(merged);
-  };
+  const syncAlbums = () =>
+    mergeAndBackfill(
+      async () => {
+        const res = await apiFetch('/api/photo-albums');
+        if (!res) return [];
+        return ((await res.json()) as CloudAlbumDoc[])
+          .map(mapCloudAlbum)
+          .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      },
+      loadLocalPhotoAlbums,
+      saveLocalPhotoAlbums,
+      (album, current) => savePhotoAlbumToDatabase(album, current),
+      callbacks.onAlbumsChange,
+      () => stopped
+    );
 
   const syncAll = async (): Promise<void> => {
     if (syncing) return;
@@ -650,10 +626,15 @@ export function subscribeToUserVault(
   };
 }
 
+/* ------------------------------------------------------------------ */
+/* Share-target intake                                                 */
+/* ------------------------------------------------------------------ */
+
+/** One-time consume of the payload the service worker stashed for us. */
 export async function consumeIncomingShare(): Promise<IncomingSharedPayload | null> {
   try {
-    const idb = await openShareDB();
-    const payload = await new Promise<IncomingSharedPayload | null>((resolve, reject) => {
+    const idb = await openDB(SHARE_DB_NAME, SHARE_DB_VERSION, [SHARE_STORE]);
+    return await new Promise<IncomingSharedPayload | null>((resolve, reject) => {
       const tx = idb.transaction(SHARE_STORE, 'readwrite');
       const store = tx.objectStore(SHARE_STORE);
       const req = store.get('latest_share');
@@ -666,7 +647,6 @@ export async function consumeIncomingShare(): Promise<IncomingSharedPayload | nu
       };
       req.onerror = () => reject(req.error);
     });
-    return payload;
   } catch {
     return null;
   }

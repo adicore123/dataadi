@@ -16,11 +16,11 @@ import {
   Folder,
 } from 'lucide-react';
 import { FilterTab, PhotoAlbum } from '@/lib/vault-logic';
+import { UploadMode } from '@/components/upload-share-modal';
+import { cn } from '@/lib/utils';
 
 interface SidebarNavProps {
   activeTab: FilterTab;
-  /** Installed APK build that last delivered a share (diagnostics). */
-  apkVersion?: string | null;
   onSelectTab: (tab: FilterTab) => void;
   counts: Record<FilterTab, number>;
   albums: PhotoAlbum[];
@@ -30,13 +30,11 @@ interface SidebarNavProps {
   userEmail?: string | null;
   onSignIn: () => void;
   onSignOut: () => void;
-  onOpenUploadModal: (initialMode?: 'upload' | 'record' | 'simulate-share') => void;
+  onOpenUploadModal: (initialMode?: UploadMode) => void;
   onOpenPwaModal: () => void;
   isInstallable: boolean;
   isInstalled: boolean;
   onInstallPwa: () => void;
-  isDesktopSidebarOpen: boolean;
-  onToggleDesktopSidebar: () => void;
   isMobileDrawerOpen: boolean;
   onOpenMobileDrawer: () => void;
   onCloseMobileDrawer: () => void;
@@ -44,7 +42,6 @@ interface SidebarNavProps {
 
 export function SidebarNav({
   activeTab,
-  apkVersion,
   onSelectTab,
   counts,
   albums,
@@ -68,26 +65,10 @@ export function SidebarNav({
     label: string;
     icon: React.ComponentType<{ className?: string }>;
   }> = [
-    {
-      id: 'all',
-      label: 'כל הקבצים',
-      icon: LayoutGrid,
-    },
-    {
-      id: 'documents',
-      label: 'מסמכים חשובים',
-      icon: FileText,
-    },
-    {
-      id: 'photos',
-      label: 'תמונות ואלבומים',
-      icon: ImageIcon,
-    },
-    {
-      id: 'recordings',
-      label: 'הקלטות',
-      icon: Mic,
-    },
+    { id: 'all', label: 'כל הקבצים', icon: LayoutGrid },
+    { id: 'documents', label: 'מסמכים חשובים', icon: FileText },
+    { id: 'photos', label: 'תמונות ואלבומים', icon: ImageIcon },
+    { id: 'recordings', label: 'הקלטות', icon: Mic },
   ];
 
   const renderSidebarContent = (isMobileDrawer: boolean) => (
@@ -164,19 +145,21 @@ export function SidebarNav({
                   if (isMobileDrawer) onCloseMobileDrawer();
                 }}
                 aria-current={isActive ? 'page' : undefined}
-                className={`w-full min-h-13 flex items-center justify-between px-4 py-3 rounded-2xl text-right transition-all cursor-pointer border ${
+                className={cn(
+                  'w-full min-h-13 flex items-center justify-between px-4 py-3 rounded-2xl text-right transition-all cursor-pointer border',
                   isActive
                     ? 'bg-mint-400/15 border-mint-500/30 text-slate-900 font-bold shadow-sm'
                     : 'border-transparent text-slate-500 hover:bg-slate-900/[0.04] hover:text-slate-800 font-medium'
-                }`}
+                )}
               >
                 <div className="flex items-center gap-3.5 min-w-0">
                   <span
-                    className={`flex items-center justify-center w-9 h-9 rounded-xl shrink-0 transition-colors ${
+                    className={cn(
+                      'flex items-center justify-center w-9 h-9 rounded-xl shrink-0 transition-colors',
                       isActive
                         ? 'bg-gradient-to-br from-mint-500/20 to-teal-500/10 text-mint-600'
                         : 'bg-slate-900/[0.04] text-slate-500'
-                    }`}
+                    )}
                   >
                     <Icon className="w-[18px] h-[18px]" />
                   </span>
@@ -184,11 +167,12 @@ export function SidebarNav({
                 </div>
 
                 <span
-                  className={`text-sm font-mono tabular-nums rounded-lg px-2 py-0.5 shrink-0 ${
+                  className={cn(
+                    'text-sm font-mono tabular-nums rounded-lg px-2 py-0.5 shrink-0',
                     isActive
                       ? 'bg-mint-500/15 text-mint-700 font-bold'
                       : 'text-slate-500'
-                  }`}
+                  )}
                 >
                   {counts[item.id]}
                 </span>
@@ -209,17 +193,19 @@ export function SidebarNav({
                           onSelectAlbum(alb.id);
                           if (isMobileDrawer) onCloseMobileDrawer();
                         }}
-                        className={`w-full min-h-11 py-2 px-3 rounded-xl flex items-center justify-between text-sm transition-colors cursor-pointer border ${
+                        className={cn(
+                          'w-full min-h-11 py-2 px-3 rounded-xl flex items-center justify-between text-sm transition-colors cursor-pointer border',
                           isAlbSelected
                             ? 'bg-mint-400/15 border-mint-500/25 text-mint-700 font-bold'
                             : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-900/[0.04]'
-                        }`}
+                        )}
                       >
                         <span className="flex items-center gap-2.5 truncate">
                           <Folder
-                            className={`w-4 h-4 shrink-0 ${
+                            className={cn(
+                              'w-4 h-4 shrink-0',
                               isAlbSelected ? 'text-mint-600' : 'text-slate-500'
-                            }`}
+                            )}
                           />
                           <span className="truncate">{alb.name}</span>
                         </span>
@@ -282,12 +268,6 @@ export function SidebarNav({
             {isInstalled ? 'מותקן בטלפון' : 'שמירת אייקון למסך הבית בנייד'}
           </span>
         </button>
-
-        {apkVersion && (
-          <div className="text-center text-[10.5px] font-mono text-slate-400 tabular-nums">
-            גרסת אפליקציה {apkVersion}
-          </div>
-        )}
       </div>
     </div>
   );
@@ -360,11 +340,12 @@ export function SidebarNav({
             type="button"
             onClick={() => onSelectTab('documents')}
             aria-current={activeTab === 'documents' ? 'page' : undefined}
-            className={`h-13 flex flex-col items-center justify-center gap-0.5 rounded-2xl transition cursor-pointer ${
+            className={cn(
+              'h-13 flex flex-col items-center justify-center gap-0.5 rounded-2xl transition cursor-pointer',
               activeTab === 'documents'
                 ? 'text-mint-700 bg-mint-400/15'
                 : 'text-slate-500 hover:text-slate-900 active:scale-95'
-            }`}
+            )}
           >
             <span className="flex items-center justify-center w-9 h-9 rounded-xl">
               <FileText className="w-[21px] h-[21px]" />
@@ -387,11 +368,12 @@ export function SidebarNav({
             type="button"
             onClick={() => onSelectTab('photos')}
             aria-current={activeTab === 'photos' ? 'page' : undefined}
-            className={`h-13 flex flex-col items-center justify-center gap-0.5 rounded-2xl transition cursor-pointer ${
+            className={cn(
+              'h-13 flex flex-col items-center justify-center gap-0.5 rounded-2xl transition cursor-pointer',
               activeTab === 'photos'
                 ? 'text-mint-700 bg-mint-400/15'
                 : 'text-slate-500 hover:text-slate-900 active:scale-95'
-            }`}
+            )}
           >
             <span className="flex items-center justify-center w-9 h-9 rounded-xl">
               <ImageIcon className="w-[21px] h-[21px]" />
@@ -403,11 +385,12 @@ export function SidebarNav({
             type="button"
             onClick={() => onSelectTab('recordings')}
             aria-current={activeTab === 'recordings' ? 'page' : undefined}
-            className={`h-13 flex flex-col items-center justify-center gap-0.5 rounded-2xl transition cursor-pointer ${
+            className={cn(
+              'h-13 flex flex-col items-center justify-center gap-0.5 rounded-2xl transition cursor-pointer',
               activeTab === 'recordings'
                 ? 'text-mint-700 bg-mint-400/15'
                 : 'text-slate-500 hover:text-slate-900 active:scale-95'
-            }`}
+            )}
           >
             <span className="flex items-center justify-center w-9 h-9 rounded-xl">
               <Mic className="w-[21px] h-[21px]" />

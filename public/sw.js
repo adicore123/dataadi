@@ -21,9 +21,6 @@ function openShareDB() {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
     request.onupgradeneeded = () => {
       const db = request.result;
-      if (!db.objectStoreNames.contains('vault_items')) {
-        db.createObjectStore('vault_items', { keyPath: 'id' });
-      }
       if (!db.objectStoreNames.contains(SHARE_STORE)) {
         db.createObjectStore(SHARE_STORE, { keyPath: 'id' });
       }

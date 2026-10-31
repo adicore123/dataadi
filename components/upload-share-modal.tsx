@@ -2,16 +2,10 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import {
-  X,
   Upload,
-  FileText,
-  Image as ImageIcon,
   Mic,
-  Check,
   Square,
   AlertCircle,
-  FolderPlus,
-  Folder,
   FolderCheck,
 } from 'lucide-react';
 import {
@@ -23,6 +17,10 @@ import {
   formatDuration,
   CreateVaultItemInput,
 } from '@/lib/vault-logic';
+import { ModalShell } from '@/components/ui/modal-shell';
+import { AlbumPicker } from '@/components/ui/album-picker';
+import { ModuleRadioGroup } from '@/components/ui/module-radio-group';
+import { cn } from '@/lib/utils';
 
 export interface SharedDraft {
   title?: string;
@@ -38,7 +36,7 @@ export interface SharedDraft {
 export type UploadMode = 'upload' | 'record' | 'simulate-share';
 export type UploadDestinationMode = 'fixed' | 'auto' | 'choose';
 
-interface UploadShareModalProps {
+export interface UploadShareModalProps {
   isOpen: boolean;
   initialMode: UploadMode;
   destinationMode: UploadDestinationMode;
@@ -52,6 +50,12 @@ interface UploadShareModalProps {
   onCreateAlbum: (name: string) => Promise<PhotoAlbum>;
   onSaveItem: (input: CreateVaultItemInput) => Promise<void> | void;
 }
+
+const DEFAULT_MIME: Record<ModuleType, string> = {
+  photos: 'image/jpeg',
+  recordings: 'audio/wav',
+  documents: 'application/pdf',
+};
 
 export function UploadShareModal({
   isOpen,
@@ -68,17 +72,14 @@ export function UploadShareModal({
 }: UploadShareModalProps) {
   // null = nothing selected yet (mobile-share flow: the user always picks the
   // destination module themselves — no auto-detection preselection).
-  const [selectedModule, setSelectedModule] = useState<ModuleType | null>(
-    defaultModule
-  );
+  const [selectedModule, setSelectedModule] = useState<ModuleType | null>(defaultModule);
   const [selectedAlbumId, setSelectedAlbumId] = useState<string>('');
-  const [showNewAlbumInput, setShowNewAlbumInput] = useState<boolean>(false);
   const [newAlbumName, setNewAlbumName] = useState<string>('');
 
   const [title, setTitle] = useState('');
   const [fileName, setFileName] = useState('');
   const [fileSize, setFileSize] = useState(0);
-  const [mimeType, setMimeType] = useState('application/pdf');
+  const [mimeType, setMimeType] = useState(DEFAULT_MIME[defaultModule]);
   const [dataUrl, setDataUrl] = useState<string | undefined>(undefined);
   const [durationSec, setDurationSec] = useState<number | undefined>(undefined);
   const [source, setSource] = useState<'upload' | 'mobile-share' | 'voice-recorder'>('upload');
@@ -104,7 +105,6 @@ export function UploadShareModal({
       incomingShareDraft?.suggestedAlbumId ||
       (defaultAlbumId && defaultAlbumId !== 'all' ? defaultAlbumId : albums[0]?.id || '');
     setSelectedAlbumId(initialAlbId);
-    setShowNewAlbumInput(destinationMode === 'choose' && albums.length === 0);
 
     if (incomingShareDraft) {
       setTitle(incomingShareDraft.title || '');
@@ -139,13 +139,7 @@ export function UploadShareModal({
       setTitle('');
       setFileName('');
       setFileSize(0);
-      setMimeType(
-        defaultModule === 'photos'
-          ? 'image/jpeg'
-          : defaultModule === 'recordings'
-          ? 'audio/wav'
-          : 'application/pdf'
-      );
+      setMimeType(DEFAULT_MIME[defaultModule]);
       setDataUrl(undefined);
       setDurationSec(undefined);
       setSource('upload');
@@ -185,13 +179,11 @@ export function UploadShareModal({
     setErrorMsg(null);
 
     const detected = detectModuleFromMime(file.type, file.name);
-    const resolvedModule = destinationMode === 'fixed' ? defaultModule : detected;
-    // 'auto' (in-app upload from the "all files" tab) still detects silently;
-    // 'choose' (mobile share) never overrides the user's own selection.
-    if (destinationMode !== 'fixed' && destinationMode !== 'choose') {
-      setSelectedModule(resolvedModule);
-    }
+    // 'fixed' keeps the module it was opened with; 'auto' (in-app upload
+    // from "all files") detects silently; 'choose' (mobile share) never
+    // overrides the user's own selection.
     if (destinationMode === 'auto') {
+      setSelectedModule(detected);
       setAutoDestinationResolved(true);
     }
     setFileName(file.name);
@@ -222,7 +214,6 @@ export function UploadShareModal({
     const created = await onCreateAlbum(trimmed);
     setSelectedAlbumId(created.id);
     setNewAlbumName('');
-    setShowNewAlbumInput(false);
   };
 
   const startVoiceRecording = async () => {
@@ -263,7 +254,7 @@ export function UploadShareModal({
         recorder.start();
       }
     } catch {
-      // Fallback to synthesized audio on stop
+      // Mic denied — surfaced on stop.
     }
   };
 
@@ -312,11 +303,10 @@ export function UploadShareModal({
     const targetModule: ModuleType = selectedModule || defaultModule;
 
     // Photos and recordings are binary content — saving without an actual
-    // file would fake it (this used to silently substitute a demo beep /
-    // placeholder image). Block instead and tell the user.
+    // file would fake it. Block instead and tell the user.
     if (!dataUrl && (targetModule === 'photos' || targetModule === 'recordings')) {
       setErrorMsg(
-        'הקובץ עצמו עדיין לא נבחר! גלול לשלב 1 בראש הטופס ← לחץ על המסגרת הכתומה ← בחר את הקובץ מהטלפון ← ואז שמור'
+        'הקובץ עצמו עדיין לא נבחר! גלול לשלב 1 בראש הטופס ← לחץ על המסגרת ← בחר את הקובץ מהטלפון ← ואז שמור'
       );
       return;
     }
@@ -353,21 +343,14 @@ export function UploadShareModal({
         }
       }
 
-      const defaultExt =
-        targetModule === 'photos'
-          ? 'jpg'
-          : targetModule === 'recordings'
-          ? 'wav'
-          : 'pdf';
-      const finalFileName = fileName.trim() || `${title.trim().slice(0, 25)}.${defaultExt}`;
+      const finalFileName =
+        fileName.trim() || `${title.trim().slice(0, 25)}.${targetModule === 'photos' ? 'jpg' : targetModule === 'recordings' ? 'wav' : 'pdf'}`;
       const finalSize = fileSize > 0 ? fileSize : 48200;
 
       // Only documents can be saved without a file (as a visible text note
       // built from the title) — photos/recordings are blocked by validation.
-      let finalDataUrl = dataUrl;
-      if (!finalDataUrl) {
-        finalDataUrl = `data:text/plain;charset=utf-8,${encodeURIComponent(title.trim())}`;
-      }
+      const finalDataUrl =
+        dataUrl || `data:text/plain;charset=utf-8,${encodeURIComponent(title.trim())}`;
 
       await onSaveItem({
         title: title.trim(),
@@ -404,7 +387,7 @@ export function UploadShareModal({
       ? null
       : destinationMode === 'auto' && !autoDestinationResolved
       ? 'סוג הקובץ יזוהה אוטומטית בעת הבחירה'
-      : `יישמר ב: ${selectedModule ? MODULE_META[selectedModule].label : MODULE_META[defaultModule].label}${
+      : `יישמר ב: ${MODULE_META[selectedModule || defaultModule].label}${
           fixedAlbumSelected && fixedAlbumName ? ` · אלבום ${fixedAlbumName}` : ''
         }`;
   const titleStepNumber = destinationMode === 'choose' ? 3 : 2;
@@ -412,314 +395,197 @@ export function UploadShareModal({
     destinationMode === 'fixed' ? MODULE_META[defaultModule].acceptAttr : undefined;
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="upload-share-modal-title"
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-900/40 backdrop-blur-sm p-0 sm:p-4"
-    >
-      <div className="w-full max-w-lg rounded-t-4xl sm:rounded-4xl glass-strong shadow-2xl overflow-hidden max-h-[92vh] flex flex-col">
-        {/* Sheet handle (mobile affordance) */}
-        <div className="sm:hidden flex justify-center pt-3 pb-1" aria-hidden="true">
-          <div className="sheet-handle" />
-        </div>
-
-        {/* Header */}
-        <div className="px-6 py-4 border-b border-slate-900/[0.08]">
-          <div className="flex items-center justify-between gap-3">
-            <h2
-              id="upload-share-modal-title"
-              className="text-xl font-bold tracking-tight text-slate-900"
-            >
-              העלאת קובץ חדש
-            </h2>
-            <button
-              type="button"
-              onClick={onClose}
-              aria-label="סגירה"
-              className="w-11 h-11 flex items-center justify-center rounded-2xl glass text-slate-500 hover:text-slate-900 hover:bg-slate-900/5 active:scale-95 transition cursor-pointer"
-            >
-              <X className="w-5 h-5" />
-            </button>
-          </div>
+    <ModalShell
+      titleId="upload-share-modal-title"
+      title="העלאת קובץ חדש"
+      closeLabel="סגירה"
+      onClose={onClose}
+      headerExtra={
+        <>
           {destinationHint && (
-            <div className="mt-3 inline-flex items-center gap-2 rounded-xl bg-mint-500/10 border border-mint-500/25 px-3 py-1.5 text-xs font-semibold text-mint-700">
+            <div className="inline-flex items-center gap-2 rounded-xl bg-mint-500/10 border border-mint-500/25 px-3 py-1.5 text-xs font-semibold text-mint-700">
               <FolderCheck className="w-3.5 h-3.5 text-mint-600 shrink-0" />
               <span>{destinationHint}</span>
             </div>
           )}
           {notice && (
-            <div className="mt-2 flex items-center gap-2 rounded-xl bg-amber-400/15 border border-amber-500/30 px-3 py-1.5 text-xs font-semibold text-amber-700">
+            <div className="flex items-center gap-2 rounded-xl bg-amber-400/15 border border-amber-500/30 px-3 py-1.5 text-xs font-semibold text-amber-700">
               <AlertCircle className="w-3.5 h-3.5 shrink-0" />
               <span>{notice}</span>
             </div>
           )}
+        </>
+      }
+      footer={
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={onClose}
+            className="min-h-12 px-5 py-3 rounded-2xl glass text-sm font-bold text-slate-600 hover:bg-slate-900/5 active:scale-95 transition cursor-pointer"
+          >
+            ביטול
+          </button>
+          <button
+            type="submit"
+            form="upload-share-form"
+            disabled={isSubmitting}
+            className="btn-accent flex-1 min-h-12 py-3 rounded-2xl text-base font-bold disabled:opacity-50 disabled:shadow-none cursor-pointer"
+          >
+            {isSubmitting ? 'שומר...' : 'שמור קובץ'}
+          </button>
+        </div>
+      }
+    >
+      {/* 3-Step Form */}
+      <form id="upload-share-form" onSubmit={handleSubmit} className="space-y-6">
+        {/* STEP 1: Choose File */}
+        <div className="space-y-2">
+          <span className="flex items-center gap-2 text-sm font-bold text-slate-900">
+            <span className="flex items-center justify-center w-6 h-6 rounded-lg bg-mint-500/15 text-mint-700 text-xs font-bold shrink-0">
+              1
+            </span>
+            בחר קובץ מהטלפון או מהמחשב
+          </span>
+
+          <label
+            htmlFor="vault-file-input"
+            className={cn(
+              'flex flex-col items-center justify-center w-full p-6 border-2 border-dashed rounded-3xl transition-all cursor-pointer text-center gap-2.5',
+              fileName
+                ? 'border-mint-500/50 bg-mint-500/[0.06]'
+                : destinationMode === 'choose'
+                ? 'border-amber-500/50 bg-amber-400/[0.06] hover:border-amber-500/70 hover:bg-amber-400/[0.09]'
+                : 'border-slate-900/[0.14] bg-slate-900/[0.02] hover:border-mint-500/40 hover:bg-mint-500/[0.04]'
+            )}
+          >
+            <span className="flex items-center justify-center w-12 h-12 rounded-2xl bg-gradient-to-br from-mint-500/20 to-teal-500/10 text-mint-600">
+              <Upload className="w-6 h-6" />
+            </span>
+            <span className="text-[15px] font-bold text-slate-800 leading-snug break-all">
+              {fileName
+                ? `${fileName} (${formatFileSizeHe(fileSize)})`
+                : 'לחץ כאן לבחירת הקובץ (חובה)'}
+            </span>
+            {fileName && (
+              <span className="text-xs font-semibold text-mint-700">הקובץ נבחר ✓</span>
+            )}
+            <input
+              id="vault-file-input"
+              type="file"
+              accept={acceptedFileTypes}
+              onChange={handleFileChange}
+              className="sr-only"
+            />
+          </label>
+
+          {/* Optional live voice recording if they chose Recordings */}
+          {selectedModule === 'recordings' && (
+            <div className="flex items-center justify-between gap-3 p-3.5 rounded-2xl glass">
+              <span className="flex items-center gap-2 text-xs font-medium text-slate-600 min-w-0">
+                {isRecording && (
+                  <span
+                    aria-hidden="true"
+                    className="w-2.5 h-2.5 rounded-full bg-red-400 animate-pulse shrink-0"
+                  />
+                )}
+                <span className="truncate">
+                  {isRecording
+                    ? `מקליט כעת... (${formatDuration(recSeconds)})`
+                    : durationSec
+                    ? `הוקלט (${formatDuration(durationSec)})`
+                    : 'רוצה להקליט עכשיו מהמיקרופון?'}
+                </span>
+              </span>
+              {!isRecording ? (
+                <button
+                  type="button"
+                  onClick={startVoiceRecording}
+                  className="btn-accent min-h-10 py-2 px-4 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer shrink-0"
+                >
+                  <Mic className="w-3.5 h-3.5" />
+                  <span>הקלט קול</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={stopVoiceRecording}
+                  className="min-h-10 py-2 px-4 rounded-xl bg-red-500/90 text-white text-xs font-bold hover:bg-red-500 flex items-center gap-1.5 active:scale-95 transition cursor-pointer shrink-0"
+                >
+                  <Square className="w-3.5 h-3.5" />
+                  <span>עצור</span>
+                </button>
+              )}
+            </div>
+          )}
         </div>
 
-        {/* 3-Step Form */}
-        <form onSubmit={handleSubmit} className="p-5 sm:p-6 space-y-6 overflow-y-auto">
-          {/* STEP 1: Choose File */}
-          <div className="space-y-2">
+        {/* STEP 2: Where to put it? (mobile share only) */}
+        {destinationMode === 'choose' && (
+          <div className="space-y-2.5">
             <span className="flex items-center gap-2 text-sm font-bold text-slate-900">
               <span className="flex items-center justify-center w-6 h-6 rounded-lg bg-mint-500/15 text-mint-700 text-xs font-bold shrink-0">
-                1
+                2
               </span>
-              בחר קובץ מהטלפון או מהמחשב
+              לאן להכניס את הקובץ?
             </span>
-
-            <label
-              htmlFor="vault-file-input"
-              className={`flex flex-col items-center justify-center w-full p-6 border-2 border-dashed rounded-3xl transition-all cursor-pointer text-center gap-2.5 ${
-                fileName
-                  ? 'border-mint-500/50 bg-mint-500/[0.06]'
-                  : destinationMode === 'choose'
-                  ? 'border-amber-500/50 bg-amber-400/[0.06] hover:border-amber-500/70 hover:bg-amber-400/[0.09]'
-                  : 'border-slate-900/[0.14] bg-slate-900/[0.02] hover:border-mint-500/40 hover:bg-mint-500/[0.04]'
-              }`}
-            >
-              <span className="flex items-center justify-center w-12 h-12 rounded-2xl bg-gradient-to-br from-mint-500/20 to-teal-500/10 text-mint-600">
-                <Upload className="w-6 h-6" />
-              </span>
-              <span className="text-[15px] font-bold text-slate-800 leading-snug break-all">
-                {fileName
-                  ? `${fileName} (${formatFileSizeHe(fileSize)})`
-                  : 'לחץ כאן לבחירת הקובץ (חובה)'}
-              </span>
-              {fileName && (
-                <span className="text-xs font-semibold text-mint-700">הקובץ נבחר ✓</span>
-              )}
-              <input
-                id="vault-file-input"
-                type="file"
-                accept={acceptedFileTypes}
-                onChange={handleFileChange}
-                className="sr-only"
-              />
-            </label>
-
-            {/* Optional live voice recording if they chose Recordings */}
-            {selectedModule === 'recordings' && (
-              <div className="flex items-center justify-between gap-3 p-3.5 rounded-2xl glass">
-                <span className="flex items-center gap-2 text-xs font-medium text-slate-600 min-w-0">
-                  {isRecording && (
-                    <span
-                      aria-hidden="true"
-                      className="w-2.5 h-2.5 rounded-full bg-red-400 animate-pulse shrink-0"
-                    />
-                  )}
-                  <span className="truncate">
-                    {isRecording
-                      ? `מקליט כעת... (${formatDuration(recSeconds)})`
-                      : durationSec
-                      ? `הוקלט (${formatDuration(durationSec)})`
-                      : 'רוצה להקליט עכשיו מהמיקרופון?'}
-                  </span>
-                </span>
-                {!isRecording ? (
-                  <button
-                    type="button"
-                    onClick={startVoiceRecording}
-                    className="btn-accent min-h-10 py-2 px-4 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer shrink-0"
-                  >
-                    <Mic className="w-3.5 h-3.5" />
-                    <span>הקלט קול</span>
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={stopVoiceRecording}
-                    className="min-h-10 py-2 px-4 rounded-xl bg-red-500/90 text-white text-xs font-bold hover:bg-red-500 flex items-center gap-1.5 active:scale-95 transition cursor-pointer shrink-0"
-                  >
-                    <Square className="w-3.5 h-3.5" />
-                    <span>עצור</span>
-                  </button>
-                )}
-              </div>
-            )}
+            <ModuleRadioGroup value={selectedModule} onChange={setSelectedModule} />
           </div>
+        )}
 
-          {/* STEP 2: Where to put it? (mobile share only) */}
-          {destinationMode === 'choose' && (
-            <div className="space-y-2.5">
-              <span className="flex items-center gap-2 text-sm font-bold text-slate-900">
-                <span className="flex items-center justify-center w-6 h-6 rounded-lg bg-mint-500/15 text-mint-700 text-xs font-bold shrink-0">
-                  2
-                </span>
-                לאן להכניס את הקובץ?
-              </span>
-              <div
-                className="grid grid-cols-3 gap-2.5"
-                role="radiogroup"
-                aria-label="לאן להכניס"
-              >
-                {(
-                  [
-                    { id: 'photos', label: 'תמונות', icon: ImageIcon },
-                    { id: 'documents', label: 'מסמכים', icon: FileText },
-                    { id: 'recordings', label: 'הקלטות', icon: Mic },
-                  ] as const
-                ).map((mod) => {
-                  const Icon = mod.icon;
-                  const active = selectedModule === mod.id;
-                  return (
-                    <button
-                      key={mod.id}
-                      type="button"
-                      role="radio"
-                      aria-checked={active}
-                      onClick={() => setSelectedModule(mod.id)}
-                      className={`min-h-20 p-3 rounded-2xl border flex flex-col items-center justify-center gap-2 transition-all cursor-pointer active:scale-95 ${
-                        active
-                          ? 'bg-gradient-to-br from-mint-500/20 to-teal-500/10 border-mint-500/50 text-slate-900 shadow-glow'
-                          : 'glass text-slate-600 hover:bg-slate-900/5'
-                      }`}
-                    >
-                      <Icon
-                        className={`w-6 h-6 ${active ? 'text-mint-600' : 'text-slate-400'}`}
-                      />
-                      <span className="text-sm font-bold">{mod.label}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
+        {/* IF PHOTOS: Which Album? */}
+        {showAlbumPicker && (
+          <AlbumPicker
+            albums={albums}
+            selectedAlbumId={selectedAlbumId}
+            newAlbumName={newAlbumName}
+            onSelectAlbum={setSelectedAlbumId}
+            onNewAlbumNameChange={(v) => {
+              setNewAlbumName(v);
+              if (errorMsg) setErrorMsg(null);
+            }}
+            onQuickCreate={handleQuickCreateAlbum}
+            question="לאיזה אלבום להכניס את התמונה?"
+            inputId="new-photo-album-input"
+          />
+        )}
 
-          {/* IF PHOTOS: Which Album? */}
-          {showAlbumPicker && (
-            <div className="p-4 rounded-3xl glass space-y-3">
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                  <Folder className="w-4 h-4 text-mint-600" />
-                  <span>לאיזה אלבום להכניס את התמונה?</span>
-                </span>
-                {albums.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => setShowNewAlbumInput((v) => !v)}
-                    className="text-xs font-bold text-mint-700 hover:opacity-80 flex items-center gap-1 cursor-pointer shrink-0"
-                  >
-                    <FolderPlus className="w-3.5 h-3.5" />
-                    <span>{showNewAlbumInput ? 'אלבום קיים' : 'אלבום חדש'}</span>
-                  </button>
-                )}
-              </div>
+        {/* STEP 3: Title */}
+        <div className="space-y-2">
+          <label
+            htmlFor="item-title-input"
+            className="flex items-center gap-2 text-sm font-bold text-slate-900"
+          >
+            <span className="flex items-center justify-center w-6 h-6 rounded-lg bg-mint-500/15 text-mint-700 text-xs font-bold shrink-0">
+              {titleStepNumber}
+            </span>
+            תן כותרת לקובץ
+          </label>
+          <input
+            id="item-title-input"
+            type="text"
+            value={title}
+            onChange={(e) => {
+              setTitle(e.target.value);
+              if (errorMsg) setErrorMsg(null);
+            }}
+            placeholder="לדוגמה: חוזה שכירות / צילום קבלה / הקלטת פגישה..."
+            className="input-glass w-full h-12 px-4 text-base rounded-2xl focus:bg-white transition-colors"
+          />
+          <p className="text-xs text-slate-400">
+            התאריך והשעה נשמרים אוטומטית עם הקובץ.
+          </p>
+        </div>
 
-              {albums.length > 0 && !showNewAlbumInput && (
-                <div className="flex flex-wrap gap-2">
-                  {albums.map((album) => {
-                    const isSelected = selectedAlbumId === album.id;
-                    return (
-                      <button
-                        key={album.id}
-                        type="button"
-                        onClick={() => {
-                          setSelectedAlbumId(album.id);
-                          setNewAlbumName('');
-                        }}
-                        className={`min-h-10 px-4 py-2 rounded-xl border text-sm font-bold flex items-center gap-2 transition cursor-pointer ${
-                          isSelected
-                            ? 'bg-gradient-to-br from-mint-500/15 to-teal-500/10 border-mint-500/40 text-mint-700'
-                            : 'glass text-slate-600 hover:bg-slate-900/5'
-                        }`}
-                      >
-                        <Folder
-                          className={`w-4 h-4 ${
-                            isSelected ? 'text-mint-600' : 'text-slate-500'
-                          }`}
-                        />
-                        <span>{album.name}</span>
-                        {isSelected && <Check className="w-4 h-4 text-mint-600" />}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-
-              {(showNewAlbumInput || albums.length === 0) && (
-                <div className="flex flex-col sm:flex-row gap-2">
-                  <label htmlFor="new-photo-album-input" className="sr-only">
-                    שם אלבום חדש
-                  </label>
-                  <input
-                    id="new-photo-album-input"
-                    type="text"
-                    value={newAlbumName}
-                    onChange={(e) => {
-                      setNewAlbumName(e.target.value);
-                      if (errorMsg) setErrorMsg(null);
-                    }}
-                    placeholder="כתוב שם לאלבום חדש (למשל: קבלות, משפחה, עבודה)..."
-                    className="flex-1 min-h-11 px-3.5 rounded-xl glass text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-mint-500/60"
-                  />
-                  <button
-                    type="button"
-                    onClick={handleQuickCreateAlbum}
-                    className="btn-accent min-h-11 px-4 rounded-xl text-sm font-bold cursor-pointer whitespace-nowrap"
-                  >
-                    צור אלבום
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* STEP 3: Title */}
-          <div className="space-y-2">
-            <label
-              htmlFor="item-title-input"
-              className="flex items-center gap-2 text-sm font-bold text-slate-900"
-            >
-              <span className="flex items-center justify-center w-6 h-6 rounded-lg bg-mint-500/15 text-mint-700 text-xs font-bold shrink-0">
-                {titleStepNumber}
-              </span>
-              תן כותרת לקובץ
-            </label>
-            <input
-              id="item-title-input"
-              type="text"
-              value={title}
-              onChange={(e) => {
-                setTitle(e.target.value);
-                if (errorMsg) setErrorMsg(null);
-              }}
-              placeholder="לדוגמה: חוזה שכירות / צילום קבלה / הקלטת פגישה..."
-              className="w-full h-12 px-4 rounded-2xl glass text-base text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-mint-500/60 focus:bg-white transition-colors"
-            />
-            <p className="text-xs text-slate-400">
-              התאריך והשעה נשמרים אוטומטית עם הקובץ.
-            </p>
+        {errorMsg && (
+          <div
+            role="alert"
+            className="flex items-center gap-2 p-3 rounded-2xl bg-red-500/10 border border-red-500/30 text-sm font-medium text-red-600"
+          >
+            <AlertCircle className="w-4 h-4 shrink-0" />
+            <span>{errorMsg}</span>
           </div>
-
-          {errorMsg && (
-            <div
-              role="alert"
-              className="flex items-center gap-2 p-3 rounded-2xl bg-red-500/10 border border-red-500/30 text-sm font-medium text-red-600"
-            >
-              <AlertCircle className="w-4 h-4 shrink-0" />
-              <span>{errorMsg}</span>
-            </div>
-          )}
-
-          {/* Submit */}
-          <div className="flex items-center gap-3 pt-1 pb-safe">
-            <button
-              type="button"
-              onClick={onClose}
-              className="min-h-12 px-5 py-3 rounded-2xl glass text-sm font-bold text-slate-600 hover:bg-slate-900/5 active:scale-95 transition cursor-pointer"
-            >
-              ביטול
-            </button>
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className="btn-accent flex-1 min-h-12 py-3 rounded-2xl text-base font-bold disabled:opacity-50 disabled:shadow-none cursor-pointer"
-            >
-              {isSubmitting ? 'שומר...' : 'שמור קובץ'}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
+        )}
+      </form>
+    </ModalShell>
   );
 }

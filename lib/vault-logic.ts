@@ -1,6 +1,15 @@
 export type ModuleType = 'documents' | 'photos' | 'recordings';
 export type FilterTab = 'all' | ModuleType;
 
+/** Field updates shared by the edit modal and the storage layer. */
+export interface VaultItemUpdates {
+  title: string;
+  module: ModuleType;
+  albumId?: string;
+  albumName?: string;
+  notes?: string;
+}
+
 export interface PhotoAlbum {
   id: string;
   name: string;
@@ -40,13 +49,36 @@ export interface CreateVaultItemInput {
   source?: 'upload' | 'mobile-share' | 'voice-recorder';
 }
 
+export const MODULE_IDS = ['documents', 'photos', 'recordings'] as const;
+const MODULE_SET = new Set<string>(MODULE_IDS);
+
+/** Collision-resistant id suffix (crypto random when available). */
+function randomIdSuffix(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return `${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+export const VAULT_SOURCES = ['upload', 'mobile-share', 'voice-recorder'] as const;
+const SOURCE_SET = new Set<string>(VAULT_SOURCES);
+
+/** Type guard used by cloud mappers and server validation alike. */
+export function isModuleType(value: unknown): value is ModuleType {
+  return typeof value === 'string' && MODULE_SET.has(value);
+}
+
+export function isVaultItemSource(value: unknown): value is VaultItem['source'] {
+  return typeof value === 'string' && SOURCE_SET.has(value);
+}
+
 export const MODULE_META: Record<
   ModuleType,
   {
     id: ModuleType;
     label: string;
     singularLabel: string;
-    shortDesc: string;
+    shortLabel: string;
     acceptAttr: string;
   }
 > = {
@@ -54,21 +86,21 @@ export const MODULE_META: Record<
     id: 'documents',
     label: 'מסמכים חשובים',
     singularLabel: 'מסמך חשוב',
-    shortDesc: 'חוזים, קבלות, תעודות, PDF וקבצי טקסט',
+    shortLabel: 'מסמכים',
     acceptAttr: '.pdf,.doc,.docx,.xls,.xlsx,.txt,.csv,.rtf,application/*,text/*',
   },
   photos: {
     id: 'photos',
     label: 'תמונות וצילומים',
     singularLabel: 'תמונה',
-    shortDesc: 'אלבומי תמונות, צילומי מסמכים ותמונות מהטלפון',
+    shortLabel: 'תמונות',
     acceptAttr: 'image/*',
   },
   recordings: {
     id: 'recordings',
     label: 'הקלטות קוליות',
-    singularLabel: 'הקלטה',
-    shortDesc: 'תזכורות קוליות, סיכומי פגישות והקלטות משותפות מהנייד',
+    singularLabel: 'הקלטה קולית',
+    shortLabel: 'הקלטות',
     acceptAttr: 'audio/*,.mp3,.wav,.m4a,.ogg,.aac,.opus,.webm',
   },
 };
@@ -103,15 +135,10 @@ export function detectModuleFromMime(mimeType: string, fileName = ''): ModuleTyp
 export function formatTimestampHe(isoString: string): {
   formattedDate: string;
   formattedTime: string;
-  fullLabel: string;
 } {
   const date = new Date(isoString);
   if (Number.isNaN(date.getTime())) {
-    return {
-      formattedDate: '01.01.2026',
-      formattedTime: '00:00',
-      fullLabel: '01.01.2026 · 00:00',
-    };
+    return { formattedDate: '01.01.2026', formattedTime: '00:00' };
   }
 
   const day = String(date.getDate()).padStart(2, '0');
@@ -120,13 +147,9 @@ export function formatTimestampHe(isoString: string): {
   const hours = String(date.getHours()).padStart(2, '0');
   const minutes = String(date.getMinutes()).padStart(2, '0');
 
-  const formattedDate = `${day}.${month}.${year}`;
-  const formattedTime = `${hours}:${minutes}`;
-
   return {
-    formattedDate,
-    formattedTime,
-    fullLabel: `${formattedDate} · ${formattedTime}`,
+    formattedDate: `${day}.${month}.${year}`,
+    formattedTime: `${hours}:${minutes}`,
   };
 }
 
@@ -168,10 +191,9 @@ export function createPhotoAlbum(
   }
 
   const { formattedDate } = formatTimestampHe(nowIso);
-  const randomSuffix = Math.random().toString(36).substring(2, 8);
 
   return {
-    id: `album_${Date.now()}_${randomSuffix}`,
+    id: `album_${randomIdSuffix()}`,
     name: trimmedName,
     createdAt: nowIso,
     formattedDate,
@@ -190,16 +212,14 @@ export function createVaultItem(
     throw new Error('חובה להזין כותרת לפריט לפני השמירה');
   }
 
-  const validModules: ModuleType[] = ['documents', 'photos', 'recordings'];
-  if (!validModules.includes(input.module)) {
+  if (!isModuleType(input.module)) {
     throw new Error('מודול יעד לא תקין');
   }
 
   const { formattedDate, formattedTime } = formatTimestampHe(nowIso);
-  const randomSuffix = Math.random().toString(36).substring(2, 8);
 
   return {
-    id: `item_${Date.now()}_${randomSuffix}`,
+    id: `item_${randomIdSuffix()}`,
     title: trimmedTitle,
     module: input.module,
     albumId: input.module === 'photos' && input.albumId ? input.albumId.trim() : '',
@@ -301,60 +321,4 @@ export function computeAlbumPhotoCounts(items: VaultItem[]): Record<string, numb
     }
   }
   return counts;
-}
-
-/**
- * Generates a playable WAV audio data URL when recording in an environment without mic hardware.
- */
-export function createSynthesizedWavDataUrl(durationSec = 3, freqHz = 440): string {
-  const sampleRate = 8000;
-  const numSamples = Math.max(1, Math.floor(sampleRate * durationSec));
-  const buffer = new ArrayBuffer(44 + numSamples * 2);
-  const view = new DataView(buffer);
-
-  const writeStr = (offset: number, str: string) => {
-    for (let i = 0; i < str.length; i++) {
-      view.setUint8(offset + i, str.charCodeAt(i));
-    }
-  };
-
-  writeStr(0, 'RIFF');
-  view.setUint32(4, 36 + numSamples * 2, true);
-  writeStr(8, 'WAVE');
-  writeStr(12, 'fmt ');
-  view.setUint32(16, 16, true);
-  view.setUint16(20, 1, true);
-  view.setUint16(22, 1, true);
-  view.setUint32(24, sampleRate, true);
-  view.setUint32(28, sampleRate * 2, true);
-  view.setUint16(32, 2, true);
-  view.setUint16(34, 16, true);
-  writeStr(36, 'data');
-  view.setUint32(40, numSamples * 2, true);
-
-  for (let i = 0; i < numSamples; i++) {
-    const t = i / sampleRate;
-    const envelope = Math.min(1, t * 8) * Math.max(0.15, 1 - t / (durationSec * 1.1));
-    const mod = i % 4000 < 2000 ? freqHz : freqHz * 1.25;
-    const sample = Math.sin(2 * Math.PI * mod * t) * 0.35 * envelope;
-    view.setInt16(44 + i * 2, Math.max(-1, Math.min(1, sample)) * 32767, true);
-  }
-
-  const bytes = new Uint8Array(buffer);
-  let binary = '';
-  for (let i = 0; i < bytes.byteLength; i++) {
-    binary += String.fromCharCode(bytes[i]);
-  }
-  const base64 =
-    typeof btoa === 'function'
-      ? btoa(binary)
-      : Buffer.from(buffer).toString('base64');
-  return `data:audio/wav;base64,${base64}`;
-}
-
-/**
- * Returns a 100% clean, empty initial array (Zero mock/seed items as requested by user).
- */
-export function getInitialSeedItems(): VaultItem[] {
-  return [];
 }

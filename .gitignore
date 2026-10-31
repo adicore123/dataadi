@@ -2,6 +2,7 @@ node_modules/
 .next/
 .aistudio/
 .playwright-mcp/
+.playwright-cli/
 coverage/
 .DS_Store
 *.log
@@ -10,3 +11,6 @@ coverage/
 
 .vercel
 *.tsbuildinfo
+.mimosa/
+.video_agent/
+.zcode/
