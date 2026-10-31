@@ -20,7 +20,9 @@ export interface SessionUser {
 }
 
 function getSecretKey(): Uint8Array {
-  const secret = process.env.AUTH_SECRET;
+  // VAULT_AUTH_SECRET is the primary name; AUTH_SECRET kept as an alias
+  // for older deployments configured with it.
+  const secret = process.env.VAULT_AUTH_SECRET || process.env.AUTH_SECRET;
   if (!secret || secret.length < 16) {
     throw new Error('AUTH_SECRET is not set (need at least 16 characters)');
   }

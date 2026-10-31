@@ -11,7 +11,8 @@ export async function GET() {
     return NextResponse.json({
       ok: true,
       // Config diagnostics (lengths only — never the values themselves).
-      authSecretLength: (process.env.AUTH_SECRET ?? '').length,
+      authSecretLength: (process.env.VAULT_AUTH_SECRET ?? '').length,
+      authSecretAliasLength: (process.env.AUTH_SECRET ?? '').length,
       mongoUriLength: (process.env.MONGODB_URI ?? '').length,
       nodeEnv: process.env.NODE_ENV ?? '',
     });
