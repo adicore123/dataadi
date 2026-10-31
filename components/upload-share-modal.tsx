@@ -47,6 +47,8 @@ interface UploadShareModalProps {
   albums: PhotoAlbum[];
   defaultAlbumId?: string;
   incomingShareDraft?: SharedDraft | null;
+  /** Optional recovery banner (e.g. shared file not captured automatically). */
+  notice?: string | null;
   onClose: () => void;
   onCreateAlbum: (name: string) => Promise<PhotoAlbum>;
   onSaveItem: (input: CreateVaultItemInput) => Promise<void> | void;
@@ -60,11 +62,16 @@ export function UploadShareModal({
   albums,
   defaultAlbumId,
   incomingShareDraft,
+  notice,
   onClose,
   onCreateAlbum,
   onSaveItem,
 }: UploadShareModalProps) {
-  const [selectedModule, setSelectedModule] = useState<ModuleType>(defaultModule);
+  // null = nothing selected yet (mobile-share flow: the user always picks the
+  // destination module themselves — no auto-detection preselection).
+  const [selectedModule, setSelectedModule] = useState<ModuleType | null>(
+    defaultModule
+  );
   const [selectedAlbumId, setSelectedAlbumId] = useState<string>('');
   const [showNewAlbumInput, setShowNewAlbumInput] = useState<boolean>(false);
   const [newAlbumName, setNewAlbumName] = useState<string>('');
@@ -106,16 +113,12 @@ export function UploadShareModal({
       setFileSize(incomingShareDraft.fileSize || 0);
       setMimeType(incomingShareDraft.mimeType || 'application/octet-stream');
       setDataUrl(incomingShareDraft.dataUrl);
-      const mod =
-        incomingShareDraft.suggestedModule ||
-        detectModuleFromMime(
-          incomingShareDraft.mimeType || '',
-          incomingShareDraft.fileName || ''
-        );
-      setSelectedModule(mod);
+      // Mobile share: user picks the destination module manually — no
+      // automatic preselection from the file type.
+      setSelectedModule(incomingShareDraft.suggestedModule || null);
       setSource('mobile-share');
     } else if (initialMode === 'simulate-share') {
-      setSelectedModule(defaultModule);
+      setSelectedModule(null);
       setTitle('');
       setFileName('');
       setFileSize(0);
@@ -184,7 +187,9 @@ export function UploadShareModal({
 
     const detected = detectModuleFromMime(file.type, file.name);
     const resolvedModule = destinationMode === 'fixed' ? defaultModule : detected;
-    if (destinationMode !== 'fixed') {
+    // 'auto' (in-app upload from the "all files" tab) still detects silently;
+    // 'choose' (mobile share) never overrides the user's own selection.
+    if (destinationMode !== 'fixed' && destinationMode !== 'choose') {
       setSelectedModule(resolvedModule);
     }
     if (destinationMode === 'auto') {
@@ -193,10 +198,6 @@ export function UploadShareModal({
     setFileName(file.name);
     setFileSize(file.size);
     setMimeType(file.type || 'application/octet-stream');
-
-    if (destinationMode === 'choose' && resolvedModule === 'photos' && albums.length === 0) {
-      setShowNewAlbumInput(true);
-    }
 
     if (!title.trim()) {
       const cleanName = file.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ');
@@ -300,10 +301,19 @@ export function UploadShareModal({
       return;
     }
 
+    if (destinationMode === 'choose' && !selectedModule) {
+      setErrorMsg('נא לבחור לאן להכניס את הקובץ (מסמכים / תמונות / הקלטות)');
+      return;
+    }
+
     if (destinationMode === 'auto' && !autoDestinationResolved) {
       setErrorMsg('נא לבחור קובץ כדי שהמערכת תזהה לאן להעלות אותו');
       return;
     }
+
+    // After validation the module is always known ('fixed'/'auto' prefill it;
+    // 'choose' passed the check above). Fallback keeps TS happy.
+    const targetModule: ModuleType = selectedModule || defaultModule;
 
     setErrorMsg(null);
     setIsSubmitting(true);
@@ -312,7 +322,7 @@ export function UploadShareModal({
       let targetAlbumId = '';
       let targetAlbumName = '';
 
-      if (selectedModule === 'photos') {
+      if (targetModule === 'photos') {
         if (newAlbumName.trim()) {
           const created = await onCreateAlbum(newAlbumName.trim());
           targetAlbumId = created.id;
@@ -327,9 +337,9 @@ export function UploadShareModal({
       }
 
       const defaultExt =
-        selectedModule === 'photos'
+        targetModule === 'photos'
           ? 'jpg'
-          : selectedModule === 'recordings'
+          : targetModule === 'recordings'
           ? 'wav'
           : 'pdf';
       const finalFileName = fileName.trim() || `${title.trim().slice(0, 25)}.${defaultExt}`;
@@ -337,9 +347,9 @@ export function UploadShareModal({
 
       let finalDataUrl = dataUrl;
       if (!finalDataUrl) {
-        if (selectedModule === 'recordings') {
+        if (targetModule === 'recordings') {
           finalDataUrl = createSynthesizedWavDataUrl(durationSec || 3, 440);
-        } else if (selectedModule === 'photos') {
+        } else if (targetModule === 'photos') {
           const placeholderSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 400" fill="none"><rect width="600" height="400" fill="#EAF2F8"/><rect x="90" y="60" width="420" height="280" rx="16" fill="#F8FAFC" stroke="#10B981" stroke-width="2"/><circle cx="210" cy="150" r="28" fill="#34D399" fill-opacity="0.4"/><path d="M130 290L230 190L310 260L390 175L470 290H130Z" fill="#059669" fill-opacity="0.35"/></svg>`;
           finalDataUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(placeholderSvg)}`;
         } else {
@@ -349,14 +359,14 @@ export function UploadShareModal({
 
       await onSaveItem({
         title: title.trim(),
-        module: selectedModule,
+        module: targetModule,
         albumId: targetAlbumId || undefined,
         albumName: targetAlbumName || undefined,
         fileName: finalFileName,
         fileSize: finalSize,
         mimeType,
         dataUrl: finalDataUrl,
-        durationSec: selectedModule === 'recordings' ? durationSec || 3 : undefined,
+        durationSec: targetModule === 'recordings' ? durationSec || 3 : undefined,
         source,
       });
       onClose();
@@ -382,7 +392,7 @@ export function UploadShareModal({
       ? null
       : destinationMode === 'auto' && !autoDestinationResolved
       ? 'סוג הקובץ יזוהה אוטומטית בעת הבחירה'
-      : `יישמר ב: ${MODULE_META[selectedModule].label}${
+      : `יישמר ב: ${selectedModule ? MODULE_META[selectedModule].label : MODULE_META[defaultModule].label}${
           fixedAlbumSelected && fixedAlbumName ? ` · אלבום ${fixedAlbumName}` : ''
         }`;
   const titleStepNumber = destinationMode === 'choose' ? 3 : 2;
@@ -424,6 +434,12 @@ export function UploadShareModal({
             <div className="mt-3 inline-flex items-center gap-2 rounded-xl bg-mint-500/10 border border-mint-500/25 px-3 py-1.5 text-xs font-semibold text-mint-700">
               <FolderCheck className="w-3.5 h-3.5 text-mint-600 shrink-0" />
               <span>{destinationHint}</span>
+            </div>
+          )}
+          {notice && (
+            <div className="mt-2 flex items-center gap-2 rounded-xl bg-amber-400/15 border border-amber-500/30 px-3 py-1.5 text-xs font-semibold text-amber-700">
+              <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+              <span>{notice}</span>
             </div>
           )}
         </div>

@@ -16,7 +16,6 @@ import {
   filterAndSortItems,
   computeModuleCounts,
   computeAlbumPhotoCounts,
-  detectModuleFromMime,
   getInitialSeedItems,
 } from '@/lib/vault-logic';
 import {
@@ -82,6 +81,7 @@ export default function SmartVaultCRMPage() {
   });
   const [selectedItem, setSelectedItem] = useState<VaultItem | null>(null);
   const [pwaModalOpen, setPwaModalOpen] = useState(false);
+  const [shareNotice, setShareNotice] = useState<string | null>(null);
 
   const { isInstallable, isInstalled, isIOS, install } = usePWAInstall();
 
@@ -106,6 +106,26 @@ export default function SmartVaultCRMPage() {
         const isShared = params.get('shared');
         const queryTitle = params.get('title') || params.get('share_title');
         const queryText = params.get('text') || params.get('share_text');
+        // Recovery flow: the shared file did not reach the app automatically
+        // (server fallback route or a failed service-worker save). Open the
+        // modal with no preselected module and ask the user to attach the
+        // file manually.
+        const openShareRecovery = (fileName?: string | null) => {
+          if (!mounted) return;
+          setShareNotice(
+            'הקובץ המשותף לא נקלט אוטומטית — בחר/י אותו בשלב 1 ובחר/י לאיזה מודול להכניס אותו'
+          );
+          setUploadContext({
+            mode: 'upload',
+            destinationMode: 'choose',
+            targetModule: 'photos',
+            incomingShareDraft: {
+              title: fileName ? fileName.replace(/\.[^/.]+$/, '') : '',
+              notes: '',
+            },
+          });
+          setUploadModalOpen(true);
+        };
 
         if (isShared === '1') {
           const sharedPayload = await consumeIncomingShare();
@@ -117,10 +137,6 @@ export default function SmartVaultCRMPage() {
                 sharedPayload.file.type
               );
             }
-            const detectedMod = detectModuleFromMime(
-              sharedPayload.file?.type || '',
-              sharedPayload.file?.name || ''
-            );
             const incomingShareDraft: SharedDraft = {
               title:
                 sharedPayload.title ||
@@ -132,16 +148,22 @@ export default function SmartVaultCRMPage() {
               fileSize: sharedPayload.file?.size || 64000,
               mimeType: sharedPayload.file?.type || 'application/octet-stream',
               dataUrl: fileDataUrl,
-              suggestedModule: detectedMod,
             };
+            setShareNotice(null);
             setUploadContext({
               mode: 'upload',
               destinationMode: 'choose',
-              targetModule: detectedMod,
+              targetModule: 'photos',
               incomingShareDraft,
             });
             setUploadModalOpen(true);
+          } else {
+            // The service worker redirected here but the payload is gone.
+            openShareRecovery(params.get('name'));
           }
+          window.history.replaceState({}, '', '/');
+        } else if (isShared === 'error') {
+          openShareRecovery(params.get('name'));
           window.history.replaceState({}, '', '/');
         } else if (queryTitle || queryText) {
           const incomingShareDraft: SharedDraft = {
@@ -150,8 +172,8 @@ export default function SmartVaultCRMPage() {
             fileName: 'shared-note.txt',
             fileSize: 2048,
             mimeType: 'text/plain',
-            suggestedModule: 'documents',
           };
+          setShareNotice(null);
           setUploadContext({
             mode: 'upload',
             destinationMode: 'choose',
@@ -439,8 +461,10 @@ export default function SmartVaultCRMPage() {
         albums={albums}
         defaultAlbumId={uploadContext.targetAlbumId}
         incomingShareDraft={uploadContext.incomingShareDraft}
+        notice={shareNotice}
         onClose={() => {
           setUploadModalOpen(false);
+          setShareNotice(null);
           setUploadContext((current) => ({
             ...current,
             incomingShareDraft: null,
