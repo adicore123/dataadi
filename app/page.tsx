@@ -92,6 +92,16 @@ export default function SmartVaultCRMPage() {
   const [selectedItem, setSelectedItem] = useState<VaultItem | null>(null);
   const [pwaModalOpen, setPwaModalOpen] = useState(false);
   const [shareNotice, setShareNotice] = useState<string | null>(null);
+  const [apkVersion, setApkVersion] = useState<string | null>(null);
+
+  // Show which installed APK build last delivered a share (diagnostics).
+  useEffect(() => {
+    try {
+      setApkVersion(window.localStorage.getItem('apkBuild'));
+    } catch {
+      // storage unavailable
+    }
+  }, []);
 
   const { isInstallable, isInstalled, isIOS, install } = usePWAInstall();
 
@@ -116,14 +126,27 @@ export default function SmartVaultCRMPage() {
         const isShared = params.get('shared');
         const queryTitle = params.get('title') || params.get('share_title');
         const queryText = params.get('text') || params.get('share_text');
+        // The APK appends its build version to share URLs — remember it so
+        // the sidebar can show which APK build is installed (diagnostics).
+        const apkBuild = params.get('v');
+        if (apkBuild) {
+          setApkVersion(apkBuild);
+          try {
+            window.localStorage.setItem('apkBuild', apkBuild);
+          } catch {
+            // storage unavailable — diagnostics only, ignore
+          }
+        }
         // Recovery flow: the shared file did not reach the app automatically
         // (server fallback route or a failed service-worker save). Open the
         // modal with no preselected module and ask the user to attach the
         // file manually.
-        const openShareRecovery = (fileName?: string | null) => {
+        const openShareRecovery = (fileName?: string | null, reason?: string) => {
           if (!mounted) return;
           setShareNotice(
-            'הקובץ המשותף לא נקלט אוטומטית — בחר/י אותו בשלב 1 ובחר/י לאיזה מודול להכניס אותו'
+            reason
+              ? `${reason} — בחר/י את הקובץ ידנית בשלב 1 ובחר/י לאיזה מודול להכניס אותו`
+              : 'הקובץ המשותף לא נקלט אוטומטית — בחר/י אותו בשלב 1 ובחר/י לאיזה מודול להכניס אותו'
           );
           setUploadContext({
             mode: 'upload',
@@ -213,7 +236,12 @@ export default function SmartVaultCRMPage() {
               });
               setUploadModalOpen(true);
             } catch {
-              if (mounted) openShareRecovery(pickupName);
+              if (mounted) {
+                openShareRecovery(
+                  pickupName,
+                  'העברה האוטומטית של הקובץ מהשיתוף נכשלה בדרך (האנדרואיד עצר אותה)'
+                );
+              }
             }
           }
           window.history.replaceState({}, '', '/');
@@ -381,6 +409,7 @@ export default function SmartVaultCRMPage() {
       {/* Right-Hand Glass Sidebar */}
       <SidebarNav
         activeTab={activeTab}
+        apkVersion={apkVersion}
         onSelectTab={setActiveTab}
         counts={counts}
         albums={albums}

@@ -19,6 +19,8 @@ import { FilterTab, PhotoAlbum } from '@/lib/vault-logic';
 
 interface SidebarNavProps {
   activeTab: FilterTab;
+  /** Installed APK build that last delivered a share (diagnostics). */
+  apkVersion?: string | null;
   onSelectTab: (tab: FilterTab) => void;
   counts: Record<FilterTab, number>;
   albums: PhotoAlbum[];
@@ -42,6 +44,7 @@ interface SidebarNavProps {
 
 export function SidebarNav({
   activeTab,
+  apkVersion,
   onSelectTab,
   counts,
   albums,
@@ -279,6 +282,12 @@ export function SidebarNav({
             {isInstalled ? 'מותקן בטלפון' : 'שמירת אייקון למסך הבית בנייד'}
           </span>
         </button>
+
+        {apkVersion && (
+          <div className="text-center text-[10.5px] font-mono text-slate-400 tabular-nums">
+            גרסת אפליקציה {apkVersion}
+          </div>
+        )}
       </div>
     </div>
   );
