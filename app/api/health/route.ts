@@ -8,7 +8,11 @@ export async function GET() {
   try {
     const db = await getDb();
     await db.command({ ping: 1 });
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({
+      ok: true,
+      // Config diagnostics (lengths only — never the values themselves).
+      authSecretLength: (process.env.AUTH_SECRET ?? '').length,
+    });
   } catch (error) {
     console.error('health check failed:', error);
     return NextResponse.json({ ok: false }, { status: 503 });
