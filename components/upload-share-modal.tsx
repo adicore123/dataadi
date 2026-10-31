@@ -21,7 +21,6 @@ import {
   detectModuleFromMime,
   formatFileSizeHe,
   formatDuration,
-  createSynthesizedWavDataUrl,
   CreateVaultItemInput,
 } from '@/lib/vault-logic';
 
@@ -279,16 +278,13 @@ export function UploadShareModal({
 
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
       mediaRecorderRef.current.stop();
+      if (!title.trim()) {
+        setTitle(`הקלטה קולית (${finalDuration} שניות)`);
+      }
     } else {
-      const wavUrl = createSynthesizedWavDataUrl(finalDuration, 460);
-      setDataUrl(wavUrl);
-      setFileName(`voice-recording-${Date.now()}.wav`);
-      setFileSize(finalDuration * 16000 + 44);
-      setMimeType('audio/wav');
-    }
-
-    if (!title.trim()) {
-      setTitle(`הקלטה קולית (${finalDuration} שניות)`);
+      // Mic unavailable/denied — surface an error instead of faking audio.
+      setDurationSec(undefined);
+      setErrorMsg('לא הצלחנו להקליט מהמיקרופון — נסה שוב או צרף קובץ הקלטה קיים בשלב 1');
     }
   };
 
@@ -314,6 +310,14 @@ export function UploadShareModal({
     // After validation the module is always known ('fixed'/'auto' prefill it;
     // 'choose' passed the check above). Fallback keeps TS happy.
     const targetModule: ModuleType = selectedModule || defaultModule;
+
+    // Photos and recordings are binary content — saving without an actual
+    // file would fake it (this used to silently substitute a demo beep /
+    // placeholder image). Block instead and tell the user.
+    if (!dataUrl && (targetModule === 'photos' || targetModule === 'recordings')) {
+      setErrorMsg('נא לצרף את הקובץ בשלב 1 — בלי קובץ לא ניתן לשמור תמונה או הקלטה');
+      return;
+    }
 
     setErrorMsg(null);
     setIsSubmitting(true);
@@ -345,16 +349,11 @@ export function UploadShareModal({
       const finalFileName = fileName.trim() || `${title.trim().slice(0, 25)}.${defaultExt}`;
       const finalSize = fileSize > 0 ? fileSize : 48200;
 
+      // Only documents can be saved without a file (as a visible text note
+      // built from the title) — photos/recordings are blocked by validation.
       let finalDataUrl = dataUrl;
       if (!finalDataUrl) {
-        if (targetModule === 'recordings') {
-          finalDataUrl = createSynthesizedWavDataUrl(durationSec || 3, 440);
-        } else if (targetModule === 'photos') {
-          const placeholderSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 400" fill="none"><rect width="600" height="400" fill="#EAF2F8"/><rect x="90" y="60" width="420" height="280" rx="16" fill="#F8FAFC" stroke="#10B981" stroke-width="2"/><circle cx="210" cy="150" r="28" fill="#34D399" fill-opacity="0.4"/><path d="M130 290L230 190L310 260L390 175L470 290H130Z" fill="#059669" fill-opacity="0.35"/></svg>`;
-          finalDataUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(placeholderSvg)}`;
-        } else {
-          finalDataUrl = `data:text/plain;charset=utf-8,${encodeURIComponent(title.trim())}`;
-        }
+        finalDataUrl = `data:text/plain;charset=utf-8,${encodeURIComponent(title.trim())}`;
       }
 
       await onSaveItem({
@@ -460,6 +459,8 @@ export function UploadShareModal({
               className={`flex flex-col items-center justify-center w-full p-6 border-2 border-dashed rounded-3xl transition-all cursor-pointer text-center gap-2.5 ${
                 fileName
                   ? 'border-mint-500/50 bg-mint-500/[0.06]'
+                  : destinationMode === 'choose'
+                  ? 'border-amber-500/50 bg-amber-400/[0.06] hover:border-amber-500/70 hover:bg-amber-400/[0.09]'
                   : 'border-slate-900/[0.14] bg-slate-900/[0.02] hover:border-mint-500/40 hover:bg-mint-500/[0.04]'
               }`}
             >
@@ -469,7 +470,7 @@ export function UploadShareModal({
               <span className="text-[15px] font-bold text-slate-800 leading-snug break-all">
                 {fileName
                   ? `${fileName} (${formatFileSizeHe(fileSize)})`
-                  : 'לחץ כאן לבחירת תמונה, מסמך או הקלטה'}
+                  : 'לחץ כאן לבחירת הקובץ (חובה)'}
               </span>
               {fileName && (
                 <span className="text-xs font-semibold text-mint-700">הקובץ נבחר ✓</span>
