@@ -1,9 +1,7 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
-import { onAuthStateChanged, signInWithPopup, signOut } from 'firebase/auth';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Search, Plus, Menu } from 'lucide-react';
-import { auth, googleProvider } from '@/lib/firebase';
 import {
   VaultItem,
   PhotoAlbum,
@@ -26,7 +24,7 @@ import {
   deleteVaultItemFromDatabase,
   savePhotoAlbumToDatabase,
   deletePhotoAlbumFromDatabase,
-  subscribeToUserVaultFirestore,
+  subscribeToUserVault,
   consumeIncomingShare,
   arrayBufferToDataUrl,
 } from '@/lib/vault-storage';
@@ -40,6 +38,7 @@ import {
 } from '@/components/upload-share-modal';
 import { ItemPreviewModal } from '@/components/item-preview-modal';
 import { PwaInstallModal } from '@/components/pwa-install-modal';
+import { AuthModal } from '@/components/auth-modal';
 import { VaultItemsView } from '@/components/vault-items-view';
 
 /** Fast base64 data-URL conversion for a fetched Blob (native FileReader). */
@@ -107,10 +106,34 @@ export default function SmartVaultCRMPage() {
 
   const { isInstallable, isInstalled, isIOS, install } = usePWAInstall();
 
-  // Load clean initial state & subscribe to Firebase Auth + Firestore
+  // Cloud vault sync handle (poll + focus refresh; replaces Firestore
+  // onSnapshot listeners).
+  const unsubscribeVaultRef = useRef<(() => void) | null>(null);
+
+  const stopVaultSync = useCallback(() => {
+    unsubscribeVaultRef.current?.();
+    unsubscribeVaultRef.current = null;
+  }, []);
+
+  const startVaultSync = useCallback(
+    (email: string) => {
+      stopVaultSync();
+      unsubscribeVaultRef.current = subscribeToUserVault(email, {
+        onItemsChange: (cloudItems) => {
+          setItems(cloudItems);
+          setIsLoaded(true);
+        },
+        onAlbumsChange: (cloudAlbums) => {
+          setAlbums(cloudAlbums);
+        },
+      });
+    },
+    [stopVaultSync]
+  );
+
+  // Load clean initial state, probe the session, then sync the vault
   useEffect(() => {
     let mounted = true;
-    let unsubscribeFirestore: (() => void) | null = null;
 
     async function initLocalAndShareTarget() {
       const [localItems, localAlbums] = await Promise.all([
@@ -159,6 +182,9 @@ export default function SmartVaultCRMPage() {
           size: 'הקובץ גדול מ-25MB ולא ניתן להעברה אוטומטית',
           srv: 'שרת ההעברה המקומי לא עלה',
           'old-hook': 'הופעל מנגנון שיתוף ישן (עדכן/י את האפליקציה)',
+          net: 'העלאת הקובץ לכספת הזמנית נכשלה (רשת או כללי אבטחה)',
+          put: 'כתיבת הקובץ לכספת הזמנית נדחתה — נסה/י שוב בעוד רגע',
+          size2: 'הקובץ גדול מדי לאחסון בכספת (עד ~550KB לקבצים שאינם תמונות; תמונות נדחסות אוטומטית)',
         };
         const openShareRecovery = (fileName?: string | null, reason?: string) => {
           if (!mounted) return;
@@ -274,6 +300,65 @@ export default function SmartVaultCRMPage() {
             }
           }
           window.history.replaceState({}, '', '/');
+        } else if (isShared === 'escrow') {
+          // Native APK bridge v1.0.7+: the Android app uploads the shared
+          // file to a one-time escrow doc (pending_shares/{id}, MongoDB
+          // behind /api/pending-shares) BEFORE opening the site; we pick it
+          // up here same-origin and open the upload modal with the file
+          // ALREADY attached. This replaces the 127.0.0.1 local-server
+          // bridge, which Chrome's Local Network Access policy blocks for
+          // public sites inside TWAs.
+          const escrowId = params.get('id');
+          const escrowName = params.get('name') || 'shared-file';
+          const escrowType = params.get('type') || 'application/octet-stream';
+          const escrowSize = Number(params.get('size')) || 0;
+
+          if (!escrowId) {
+            openShareRecovery(escrowName);
+          } else {
+            try {
+              // One-time pickup: the GET atomically reads AND deletes the
+              // escrow doc on the server (while unexpired).
+              const res = await fetch(`/api/pending-shares/${encodeURIComponent(escrowId)}`);
+              if (!res.ok) throw new Error('escrow missing');
+              const data = (await res.json()) as
+                | { name?: string; mime?: string; size?: number; dataUrl?: string }
+                | undefined;
+              if (!data?.dataUrl) throw new Error('escrow missing');
+              if (!mounted) return;
+              const fileName = data.name || escrowName;
+              setShareNotice(
+                `הקובץ "${fileName}" הועבר אוטומטית מהשיתוף — בחר/י לאיזה מודול להכניס אותו ושמור`
+              );
+              setUploadContext({
+                mode: 'upload',
+                destinationMode: 'choose',
+                targetModule: 'photos',
+                incomingShareDraft: {
+                  title: fileName.replace(/\.[^/.]+$/, ''),
+                  notes: '',
+                  fileName,
+                  fileSize: data.size || escrowSize,
+                  mimeType: data.mime || escrowType,
+                  dataUrl: data.dataUrl,
+                },
+              });
+              setUploadModalOpen(true);
+            } catch {
+              if (mounted) {
+                openShareRecovery(
+                  escrowName,
+                  'העברת הקובץ האוטומטית נכשלה (המסמך הזמני לא נמצא או שפג תוקפו)'
+                );
+                try {
+                  window.localStorage.setItem('lastShareDiag', `${apkBuild || '?'} · escrow`);
+                } catch {
+                  // diagnostics only
+                }
+              }
+            }
+          }
+          window.history.replaceState({}, '', '/');
         } else if (isShared === 'error') {
           openShareRecovery(params.get('name'));
           window.history.replaceState({}, '', '/');
@@ -300,39 +385,24 @@ export default function SmartVaultCRMPage() {
 
     initLocalAndShareTarget();
 
-    const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
-      if (!mounted) return;
-      if (unsubscribeFirestore) {
-        unsubscribeFirestore();
-        unsubscribeFirestore = null;
-      }
-
-      if (user) {
-        setUserEmail(user.email || 'מחובר');
-        unsubscribeFirestore = subscribeToUserVaultFirestore(user.uid, {
-          onItemsChange: (cloudItems) => {
-            if (mounted) {
-              setItems(cloudItems);
-              setIsLoaded(true);
-            }
-          },
-          onAlbumsChange: (cloudAlbums) => {
-            if (mounted) {
-              setAlbums(cloudAlbums);
-            }
-          },
-        });
-      } else {
-        setUserEmail(null);
-      }
-    });
+    // Session probe replaces Firebase's onAuthStateChanged — the session
+    // lives in an httpOnly cookie backed by the users collection in MongoDB.
+    fetch('/api/auth/me')
+      .then((res) => res.json())
+      .then(({ email }: { email: string | null }) => {
+        if (!mounted || !email) return;
+        setUserEmail(email);
+        startVaultSync(email);
+      })
+      .catch(() => {
+        // offline — local-only mode
+      });
 
     return () => {
       mounted = false;
-      unsubscribeAuth();
-      if (unsubscribeFirestore) unsubscribeFirestore();
+      stopVaultSync();
     };
-  }, []);
+  }, [startVaultSync, stopVaultSync]);
 
   const counts = useMemo(() => computeModuleCounts(items), [items]);
   const albumPhotoCounts = useMemo(() => computeAlbumPhotoCounts(items), [items]);
@@ -348,20 +418,22 @@ export default function SmartVaultCRMPage() {
     [items, activeTab, selectedAlbumId, searchQuery]
   );
 
-  const handleSignInGoogle = async () => {
-    try {
-      await signInWithPopup(auth, googleProvider);
-    } catch {
-      // ignore popup close
-    }
+  const [authModalOpen, setAuthModalOpen] = useState(false);
+
+  const handleAuthSuccess = (email: string) => {
+    setAuthModalOpen(false);
+    setUserEmail(email);
+    startVaultSync(email);
   };
 
-  const handleSignOutGoogle = async () => {
+  const handleSignOut = async () => {
     try {
-      await signOut(auth);
+      await fetch('/api/auth/logout', { method: 'POST' });
     } catch {
-      // ignore
+      // best-effort — cookie clears server-side
     }
+    stopVaultSync();
+    setUserEmail(null);
   };
 
   const handleCreateAlbum = async (name: string): Promise<PhotoAlbum> => {
@@ -446,8 +518,8 @@ export default function SmartVaultCRMPage() {
         albumPhotoCounts={albumPhotoCounts}
         onSelectAlbum={setSelectedAlbumId}
         userEmail={userEmail}
-        onSignInGoogle={handleSignInGoogle}
-        onSignOutGoogle={handleSignOutGoogle}
+        onSignIn={() => setAuthModalOpen(true)}
+        onSignOut={handleSignOut}
         onOpenUploadModal={(mode) =>
           handleOpenUploadModal({
             mode,
@@ -612,6 +684,13 @@ export default function SmartVaultCRMPage() {
             targetModule: defaultModuleForUpload,
           })
         }
+      />
+
+      {/* Email + Password Cloud Backup Account Modal */}
+      <AuthModal
+        isOpen={authModalOpen}
+        onClose={() => setAuthModalOpen(false)}
+        onSuccess={handleAuthSuccess}
       />
     </div>
   );

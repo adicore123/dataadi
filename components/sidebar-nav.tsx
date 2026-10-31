@@ -28,8 +28,8 @@ interface SidebarNavProps {
   albumPhotoCounts: Record<string, number>;
   onSelectAlbum: (albumId: string) => void;
   userEmail?: string | null;
-  onSignInGoogle: () => void;
-  onSignOutGoogle: () => void;
+  onSignIn: () => void;
+  onSignOut: () => void;
   onOpenUploadModal: (initialMode?: 'upload' | 'record' | 'simulate-share') => void;
   onOpenPwaModal: () => void;
   isInstallable: boolean;
@@ -52,8 +52,8 @@ export function SidebarNav({
   albumPhotoCounts,
   onSelectAlbum,
   userEmail,
-  onSignInGoogle,
-  onSignOutGoogle,
+  onSignIn,
+  onSignOut,
   onOpenUploadModal,
   onOpenPwaModal,
   isInstallable,
@@ -246,7 +246,7 @@ export function SidebarNav({
             </span>
             <button
               type="button"
-              onClick={onSignOutGoogle}
+              onClick={onSignOut}
               title="התנתק"
               aria-label="התנתקות מהחשבון"
               className="w-9 h-9 flex items-center justify-center rounded-xl text-slate-400 hover:text-slate-900 hover:bg-slate-900/5 transition-colors cursor-pointer shrink-0"
@@ -257,11 +257,11 @@ export function SidebarNav({
         ) : (
           <button
             type="button"
-            onClick={onSignInGoogle}
+            onClick={onSignIn}
             className="w-full min-h-11 flex items-center justify-center gap-2 rounded-2xl glass text-xs font-semibold text-slate-700 hover:bg-slate-900/5 transition-colors cursor-pointer"
           >
             <LogIn className="w-4 h-4 text-mint-600" />
-            <span>גיבוי בענן (Google)</span>
+            <span>התחברות לגיבוי בענן</span>
           </button>
         )}
 

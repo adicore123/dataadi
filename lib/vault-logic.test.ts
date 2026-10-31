@@ -11,7 +11,7 @@ import {
   computeModuleCounts,
   computeAlbumPhotoCounts,
   getInitialSeedItems,
-} from './vault-logic';
+} from './vault-logic.ts';
 
 test('getInitialSeedItems returns a 100% clean empty array', () => {
   assert.deepEqual(getInitialSeedItems(), []);

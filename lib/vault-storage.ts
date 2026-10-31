@@ -1,29 +1,19 @@
 'use client';
 
 import {
-  collection,
-  doc,
-  setDoc,
-  updateDoc,
-  deleteDoc,
-  onSnapshot,
-  query,
-  where,
-  serverTimestamp,
-} from 'firebase/firestore';
-import {
-  db,
-  auth,
-  handleFirestoreError,
-  OperationType,
-  testFirestoreConnection,
-} from './firebase';
-import {
   VaultItem,
   PhotoAlbum,
   ModuleType,
   formatTimestampHe,
 } from './vault-logic';
+
+/**
+ * Vault storage layer — local-first over IndexedDB (+localStorage
+ * fallback), with cloud sync through the app's own API routes
+ * (MongoDB Atlas behind them). Replaces the direct Firestore client
+ * SDK access: every cloud operation is now a same-origin fetch, and
+ * a 401 simply means "not signed in" — local-only mode continues.
+ */
 
 const CLEAN_DB_NAME = 'smart_vault_crm_clean_v2';
 const CLEAN_DB_VERSION = 1;
@@ -226,9 +216,10 @@ export async function saveLocalPhotoAlbums(albums: PhotoAlbum[]): Promise<void> 
 }
 
 /**
- * Compresses large image DataURLs on the client so they always fit within Firestore's 780KB field limit.
+ * Compresses large image DataURLs on the client so cloud payloads stay
+ * within the 780KB field cap enforced by the API routes.
  */
-export async function ensureFirestoreSafeDataUrl(
+export async function ensureCloudSafeDataUrl(
   dataUrl: string | undefined,
   mimeType: string
 ): Promise<string> {
@@ -281,13 +272,44 @@ export async function ensureFirestoreSafeDataUrl(
 }
 
 /**
- * Saves a VaultItem to Firebase Firestore (when user is signed in) AND local IndexedDB.
+ * Same-origin JSON fetch against the vault API. Returns null on 401
+ * (not signed in — caller silently stays local-only). Non-2xx answers
+ * throw with the server's error message.
+ */
+async function apiFetch(path: string, init?: RequestInit): Promise<Response | null> {
+  const res = await fetch(path, {
+    ...init,
+    headers: { 'Content-Type': 'application/json', ...(init?.headers ?? {}) },
+  });
+  if (res.status === 401) return null;
+  if (!res.ok) {
+    let detail = '';
+    try {
+      detail = String((await res.json())?.error ?? '');
+    } catch {
+      // no body
+    }
+    throw new Error(detail || `HTTP ${res.status}`);
+  }
+  return res;
+}
+
+function reportCloudError(operation: string, path: string, error: unknown): never {
+  const message = error instanceof Error ? error.message : String(error);
+  console.error(
+    `Cloud sync error: ${JSON.stringify({ operation, path, message })}`
+  );
+  throw new Error(`cloud-sync ${operation} ${path} failed: ${message}`);
+}
+
+/**
+ * Saves a VaultItem to the cloud (when signed in) AND local IndexedDB.
  */
 export async function saveVaultItemToDatabase(
   item: VaultItem,
   currentItems: VaultItem[]
 ): Promise<VaultItem[]> {
-  const safeDataUrl = await ensureFirestoreSafeDataUrl(item.dataUrl, item.mimeType);
+  const safeDataUrl = await ensureCloudSafeDataUrl(item.dataUrl, item.mimeType);
   const normalizedItem: VaultItem = {
     ...item,
     dataUrl: safeDataUrl || item.dataUrl,
@@ -301,12 +323,11 @@ export async function saveVaultItemToDatabase(
   ];
   await saveLocalVaultItems(updatedLocal);
 
-  const user = auth.currentUser;
-  if (user) {
-    const path = `vault_items/${normalizedItem.id}`;
-    try {
-      await setDoc(doc(db, 'vault_items', normalizedItem.id), {
-        ownerId: user.uid,
+  try {
+    const cloud = await apiFetch('/api/vault-items', {
+      method: 'POST',
+      body: JSON.stringify({
+        id: normalizedItem.id,
         title: normalizedItem.title.slice(0, 200),
         module: normalizedItem.module,
         albumId: (normalizedItem.albumId || '').slice(0, 128),
@@ -324,19 +345,18 @@ export async function saveVaultItemToDatabase(
             : 0,
         notes: (normalizedItem.notes || '').slice(0, 1000),
         source: normalizedItem.source || 'upload',
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      });
-    } catch (error) {
-      handleFirestoreError(error, OperationType.CREATE, path);
-    }
+      }),
+    });
+    void cloud;
+  } catch (error) {
+    reportCloudError('create', `vault_items/${normalizedItem.id}`, error);
   }
 
   return updatedLocal;
 }
 
 /**
- * Updates an existing VaultItem's title, module, album, or notes in Firestore AND local storage.
+ * Updates an existing VaultItem's title, module, album, or notes in the cloud AND local storage.
  */
 export async function updateVaultItemInDatabase(
   id: string,
@@ -366,28 +386,27 @@ export async function updateVaultItemInDatabase(
   );
   await saveLocalVaultItems(updatedLocal);
 
-  const user = auth.currentUser;
-  if (user) {
-    const path = `vault_items/${id}`;
-    try {
-      await updateDoc(doc(db, 'vault_items', id), {
+  try {
+    const cloud = await apiFetch(`/api/vault-items/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({
         title: updates.title.trim().slice(0, 200),
         module: updates.module,
         albumId: cleanAlbumId.slice(0, 128),
         albumName: cleanAlbumName.slice(0, 120),
         notes: (updates.notes || '').trim().slice(0, 1000),
-        updatedAt: serverTimestamp(),
-      });
-    } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, path);
-    }
+      }),
+    });
+    void cloud;
+  } catch (error) {
+    reportCloudError('update', `vault_items/${id}`, error);
   }
 
   return updatedLocal;
 }
 
 /**
- * Deletes a VaultItem from Firestore AND local storage.
+ * Deletes a VaultItem from the cloud AND local storage.
  */
 export async function deleteVaultItemFromDatabase(
   id: string,
@@ -396,21 +415,20 @@ export async function deleteVaultItemFromDatabase(
   const updatedLocal = currentItems.filter((item) => item.id !== id);
   await saveLocalVaultItems(updatedLocal);
 
-  const user = auth.currentUser;
-  if (user) {
-    const path = `vault_items/${id}`;
-    try {
-      await deleteDoc(doc(db, 'vault_items', id));
-    } catch (error) {
-      handleFirestoreError(error, OperationType.DELETE, path);
-    }
+  try {
+    const cloud = await apiFetch(`/api/vault-items/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    });
+    void cloud;
+  } catch (error) {
+    reportCloudError('delete', `vault_items/${id}`, error);
   }
 
   return updatedLocal;
 }
 
 /**
- * Saves a PhotoAlbum to Firebase Firestore AND local storage.
+ * Saves a PhotoAlbum to the cloud AND local storage.
  */
 export async function savePhotoAlbumToDatabase(
   album: PhotoAlbum,
@@ -422,27 +440,25 @@ export async function savePhotoAlbumToDatabase(
   ];
   await saveLocalPhotoAlbums(updatedLocal);
 
-  const user = auth.currentUser;
-  if (user) {
-    const path = `photo_albums/${album.id}`;
-    try {
-      await setDoc(doc(db, 'photo_albums', album.id), {
-        ownerId: user.uid,
+  try {
+    const cloud = await apiFetch('/api/photo-albums', {
+      method: 'POST',
+      body: JSON.stringify({
+        id: album.id,
         name: album.name.trim().slice(0, 120),
         createdAtIso: album.createdAt.slice(0, 64),
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      });
-    } catch (error) {
-      handleFirestoreError(error, OperationType.CREATE, path);
-    }
+      }),
+    });
+    void cloud;
+  } catch (error) {
+    reportCloudError('create', `photo_albums/${album.id}`, error);
   }
 
   return updatedLocal;
 }
 
 /**
- * Deletes a PhotoAlbum from Firebase Firestore AND local storage.
+ * Deletes a PhotoAlbum from the cloud AND local storage.
  */
 export async function deletePhotoAlbumFromDatabase(
   albumId: string,
@@ -451,131 +467,186 @@ export async function deletePhotoAlbumFromDatabase(
   const updatedLocal = currentAlbums.filter((a) => a.id !== albumId);
   await saveLocalPhotoAlbums(updatedLocal);
 
-  const user = auth.currentUser;
-  if (user) {
-    const path = `photo_albums/${albumId}`;
-    try {
-      await deleteDoc(doc(db, 'photo_albums', albumId));
-    } catch (error) {
-      handleFirestoreError(error, OperationType.DELETE, path);
-    }
+  try {
+    const cloud = await apiFetch(`/api/photo-albums/${encodeURIComponent(albumId)}`, {
+      method: 'DELETE',
+    });
+    void cloud;
+  } catch (error) {
+    reportCloudError('delete', `photo_albums/${albumId}`, error);
   }
 
   return updatedLocal;
 }
 
+interface CloudItemDoc {
+  id: string;
+  title?: unknown;
+  module?: unknown;
+  albumId?: unknown;
+  albumName?: unknown;
+  createdAtIso?: unknown;
+  formattedDate?: unknown;
+  formattedTime?: unknown;
+  fileName?: unknown;
+  fileSize?: unknown;
+  mimeType?: unknown;
+  dataUrl?: unknown;
+  durationSec?: unknown;
+  notes?: unknown;
+  source?: unknown;
+}
+
+interface CloudAlbumDoc {
+  id: string;
+  name?: unknown;
+  createdAtIso?: unknown;
+}
+
+function mapCloudItem(d: CloudItemDoc): VaultItem {
+  const iso = typeof d.createdAtIso === 'string' ? d.createdAtIso : new Date().toISOString();
+  const ts = formatTimestampHe(iso);
+  return {
+    id: d.id,
+    title: String(d.title || ''),
+    module: (d.module as ModuleType) || 'documents',
+    albumId: d.albumId ? String(d.albumId) : '',
+    albumName: d.albumName ? String(d.albumName) : '',
+    createdAt: iso,
+    formattedDate: d.formattedDate ? String(d.formattedDate) : ts.formattedDate,
+    formattedTime: d.formattedTime ? String(d.formattedTime) : ts.formattedTime,
+    fileName: String(d.fileName || 'file'),
+    fileSize: Number(d.fileSize) || 0,
+    mimeType: String(d.mimeType || 'application/octet-stream'),
+    dataUrl: d.dataUrl ? String(d.dataUrl) : undefined,
+    durationSec: Number(d.durationSec) > 0 ? Number(d.durationSec) : undefined,
+    notes: d.notes ? String(d.notes) : undefined,
+    source: (d.source as VaultItem['source']) || 'upload',
+  };
+}
+
+function mapCloudAlbum(d: CloudAlbumDoc): PhotoAlbum {
+  const iso = typeof d.createdAtIso === 'string' ? d.createdAtIso : new Date().toISOString();
+  const { formattedDate } = formatTimestampHe(iso);
+  return {
+    id: d.id,
+    name: String(d.name || ''),
+    createdAt: iso,
+    formattedDate,
+  };
+}
+
+const SYNC_POLL_MS = 30_000;
+
 /**
- * Subscribes to real-time updates for `vault_items` and `photo_albums` in Firestore for the signed-in user,
- * and automatically syncs any locally created items/albums up to Firestore on initial sign-in.
+ * Keeps the signed-in user's vault in sync with the cloud: initial pull,
+ * backfill of any local-only docs up to the cloud, then a poll every
+ * 30 seconds plus a refresh whenever the tab regains focus. Replaces the
+ * Firestore onSnapshot listeners (Atlas has no browser push).
  */
-export function subscribeToUserVaultFirestore(
-  uid: string,
+export function subscribeToUserVault(
+  ownerId: string,
   callbacks: {
     onItemsChange: (items: VaultItem[]) => void;
     onAlbumsChange: (albums: PhotoAlbum[]) => void;
   }
 ): () => void {
-  testFirestoreConnection();
+  void ownerId; // routing happens server-side via the session cookie
+  let stopped = false;
+  let syncing = false;
 
-  const itemsQuery = query(collection(db, 'vault_items'), where('ownerId', '==', uid));
-  const albumsQuery = query(collection(db, 'photo_albums'), where('ownerId', '==', uid));
+  const syncItems = async (): Promise<void> => {
+    const res = await apiFetch('/api/vault-items');
+    if (!res) return; // signed out mid-session
+    const cloudItems = ((await res.json()) as CloudItemDoc[]).map(mapCloudItem);
 
-  const unsubItems = onSnapshot(
-    itemsQuery,
-    async (snapshot) => {
-      const cloudItems: VaultItem[] = snapshot.docs.map((docSnap) => {
-        const d = docSnap.data();
-        const iso = typeof d.createdAtIso === 'string' ? d.createdAtIso : new Date().toISOString();
-        const ts = formatTimestampHe(iso);
-        return {
-          id: docSnap.id,
-          title: String(d.title || ''),
-          module: (d.module as ModuleType) || 'documents',
-          albumId: d.albumId ? String(d.albumId) : '',
-          albumName: d.albumName ? String(d.albumName) : '',
-          createdAt: iso,
-          formattedDate: d.formattedDate ? String(d.formattedDate) : ts.formattedDate,
-          formattedTime: d.formattedTime ? String(d.formattedTime) : ts.formattedTime,
-          fileName: String(d.fileName || 'file'),
-          fileSize: Number(d.fileSize) || 0,
-          mimeType: String(d.mimeType || 'application/octet-stream'),
-          dataUrl: d.dataUrl ? String(d.dataUrl) : undefined,
-          durationSec: Number(d.durationSec) > 0 ? Number(d.durationSec) : undefined,
-          notes: d.notes ? String(d.notes) : undefined,
-          source: (d.source as VaultItem['source']) || 'upload',
-        };
-      });
-
-      // Sync any local unsynced items up to Firestore
-      const localItems = await loadLocalVaultItems();
-      const cloudIds = new Set(cloudItems.map((i) => i.id));
-      for (const localItem of localItems) {
-        if (!cloudIds.has(localItem.id)) {
-          try {
-            await saveVaultItemToDatabase(localItem, cloudItems);
-          } catch {
-            // ignore individual sync error
-          }
+    // Sync any local unsynced items up to the cloud
+    const localItems = await loadLocalVaultItems();
+    const cloudIds = new Set(cloudItems.map((i) => i.id));
+    for (const localItem of localItems) {
+      if (!cloudIds.has(localItem.id)) {
+        try {
+          await saveVaultItemToDatabase(localItem, cloudItems);
+        } catch {
+          // ignore individual sync error
         }
       }
-
-      const merged = [
-        ...cloudItems,
-        ...localItems.filter((l) => !cloudIds.has(l.id)),
-      ];
-      await saveLocalVaultItems(merged);
-      callbacks.onItemsChange(merged);
-    },
-    (error) => {
-      handleFirestoreError(error, OperationType.LIST, 'vault_items');
     }
-  );
 
-  const unsubAlbums = onSnapshot(
-    albumsQuery,
-    async (snapshot) => {
-      const cloudAlbums: PhotoAlbum[] = snapshot.docs
-        .map((docSnap) => {
-          const d = docSnap.data();
-          const iso =
-            typeof d.createdAtIso === 'string' ? d.createdAtIso : new Date().toISOString();
-          const { formattedDate } = formatTimestampHe(iso);
-          return {
-            id: docSnap.id,
-            name: String(d.name || ''),
-            createdAt: iso,
-            formattedDate,
-          };
-        })
-        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    const merged = [
+      ...cloudItems,
+      ...localItems.filter((l) => !cloudIds.has(l.id)),
+    ];
+    await saveLocalVaultItems(merged);
+    if (!stopped) callbacks.onItemsChange(merged);
+  };
 
-      const localAlbums = await loadLocalPhotoAlbums();
-      const cloudAlbumIds = new Set(cloudAlbums.map((a) => a.id));
-      for (const localAlbum of localAlbums) {
-        if (!cloudAlbumIds.has(localAlbum.id)) {
-          try {
-            await savePhotoAlbumToDatabase(localAlbum, cloudAlbums);
-          } catch {
-            // ignore
-          }
+  const syncAlbums = async (): Promise<void> => {
+    const res = await apiFetch('/api/photo-albums');
+    if (!res) return;
+    const cloudAlbums = ((await res.json()) as CloudAlbumDoc[])
+      .map(mapCloudAlbum)
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+    const localAlbums = await loadLocalPhotoAlbums();
+    const cloudAlbumIds = new Set(cloudAlbums.map((a) => a.id));
+    for (const localAlbum of localAlbums) {
+      if (!cloudAlbumIds.has(localAlbum.id)) {
+        try {
+          await savePhotoAlbumToDatabase(localAlbum, cloudAlbums);
+        } catch {
+          // ignore
         }
       }
-
-      const merged = [
-        ...cloudAlbums,
-        ...localAlbums.filter((l) => !cloudAlbumIds.has(l.id)),
-      ];
-      await saveLocalPhotoAlbums(merged);
-      callbacks.onAlbumsChange(merged);
-    },
-    (error) => {
-      handleFirestoreError(error, OperationType.LIST, 'photo_albums');
     }
-  );
+
+    const merged = [
+      ...cloudAlbums,
+      ...localAlbums.filter((l) => !cloudAlbumIds.has(l.id)),
+    ];
+    await saveLocalPhotoAlbums(merged);
+    if (!stopped) callbacks.onAlbumsChange(merged);
+  };
+
+  const syncAll = async (): Promise<void> => {
+    if (syncing) return;
+    syncing = true;
+    try {
+      await Promise.all([
+        syncItems().catch((err) => console.error('vault items sync failed:', err)),
+        syncAlbums().catch((err) => console.error('photo albums sync failed:', err)),
+      ]);
+    } finally {
+      syncing = false;
+    }
+  };
+
+  void syncAll();
+
+  const pollTimer =
+    typeof setInterval === 'function'
+      ? setInterval(() => {
+          if (typeof document === 'undefined' || !document.hidden) void syncAll();
+        }, SYNC_POLL_MS)
+      : null;
+
+  const onWake = () => void syncAll();
+  if (typeof document !== 'undefined') {
+    document.addEventListener('visibilitychange', onWake);
+  }
+  if (typeof window !== 'undefined') {
+    window.addEventListener('focus', onWake);
+  }
 
   return () => {
-    unsubItems();
-    unsubAlbums();
+    stopped = true;
+    if (pollTimer) clearInterval(pollTimer);
+    if (typeof document !== 'undefined') {
+      document.removeEventListener('visibilitychange', onWake);
+    }
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('focus', onWake);
+    }
   };
 }
 
