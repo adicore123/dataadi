@@ -12,6 +12,8 @@ export async function GET() {
       ok: true,
       // Config diagnostics (lengths only — never the values themselves).
       authSecretLength: (process.env.AUTH_SECRET ?? '').length,
+      mongoUriLength: (process.env.MONGODB_URI ?? '').length,
+      nodeEnv: process.env.NODE_ENV ?? '',
     });
   } catch (error) {
     console.error('health check failed:', error);
