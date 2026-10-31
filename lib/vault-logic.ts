@@ -5,14 +5,17 @@ export type FilterTab = 'all' | ModuleType;
 export interface VaultItemUpdates {
   title: string;
   module: ModuleType;
-  albumId?: string;
-  albumName?: string;
+  folderId?: string;
+  folderName?: string;
+  tags?: string[];
   notes?: string;
 }
 
-export interface PhotoAlbum {
+/** A folder inside one module (documents / photos / recordings). */
+export interface Folder {
   id: string;
   name: string;
+  module: ModuleType;
   createdAt: string; // ISO string
   formattedDate: string; // DD.MM.YYYY
 }
@@ -21,8 +24,9 @@ export interface VaultItem {
   id: string;
   title: string;
   module: ModuleType;
-  albumId?: string;
-  albumName?: string;
+  folderId?: string;
+  folderName?: string;
+  tags?: string[];
   createdAt: string; // ISO string
   formattedDate: string; // DD.MM.YYYY
   formattedTime: string; // HH:MM
@@ -38,8 +42,9 @@ export interface VaultItem {
 export interface CreateVaultItemInput {
   title: string;
   module: ModuleType;
-  albumId?: string;
-  albumName?: string;
+  folderId?: string;
+  folderName?: string;
+  tags?: string[];
   fileName: string;
   fileSize: number;
   mimeType: string;
@@ -52,14 +57,6 @@ export interface CreateVaultItemInput {
 export const MODULE_IDS = ['documents', 'photos', 'recordings'] as const;
 const MODULE_SET = new Set<string>(MODULE_IDS);
 
-/** Collision-resistant id suffix (crypto random when available). */
-function randomIdSuffix(): string {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return crypto.randomUUID();
-  }
-  return `${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
-}
-
 export const VAULT_SOURCES = ['upload', 'mobile-share', 'voice-recorder'] as const;
 const SOURCE_SET = new Set<string>(VAULT_SOURCES);
 
@@ -70,6 +67,14 @@ export function isModuleType(value: unknown): value is ModuleType {
 
 export function isVaultItemSource(value: unknown): value is VaultItem['source'] {
   return typeof value === 'string' && SOURCE_SET.has(value);
+}
+
+/** Collision-resistant id suffix (crypto random when available). */
+function randomIdSuffix(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return `${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
 }
 
 export const MODULE_META: Record<
@@ -104,6 +109,37 @@ export const MODULE_META: Record<
     acceptAttr: 'audio/*,.mp3,.wav,.m4a,.ogg,.aac,.opus,.webm',
   },
 };
+
+/* ------------------------------------------------------------------ */
+/* Tags                                                                */
+/* ------------------------------------------------------------------ */
+
+export const MAX_TAGS = 8;
+export const MAX_TAG_LENGTH = 40;
+
+/**
+ * Parses free-form user input ("חשוב, עבודה, 2026") into clean,
+ * de-duplicated tags (each ≤ 40 chars, at most 8).
+ */
+export function parseTagsInput(input: string): string[] {
+  const seen = new Set<string>();
+  for (const raw of input.split(/[,;\n]/)) {
+    const tag = raw.trim().slice(0, MAX_TAG_LENGTH).replace(/^#/, '');
+    if (tag) seen.add(tag);
+    if (seen.size >= MAX_TAGS) break;
+  }
+  return [...seen];
+}
+
+/** Normalizes already-typed tags (cloud/docs sources, edits). */
+export function normalizeTags(tags: unknown): string[] {
+  if (!Array.isArray(tags)) return [];
+  return parseTagsInput(tags.filter((t): t is string => typeof t === 'string').join(','));
+}
+
+/* ------------------------------------------------------------------ */
+/* Module detection & formatting                                       */
+/* ------------------------------------------------------------------ */
 
 /**
  * Automatically detects the most appropriate module from MIME type or filename extension.
@@ -178,30 +214,38 @@ export function formatDuration(seconds?: number): string {
   return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
 }
 
+/* ------------------------------------------------------------------ */
+/* Factories                                                           */
+/* ------------------------------------------------------------------ */
+
 /**
- * Creates a validated PhotoAlbum object.
+ * Creates a validated Folder object.
  */
-export function createPhotoAlbum(
+export function createFolder(
   name: string,
+  module: ModuleType,
   nowIso: string = new Date().toISOString()
-): PhotoAlbum {
+): Folder {
   const trimmedName = (name || '').trim().slice(0, 120);
   if (!trimmedName) {
-    throw new Error('נא להזין שם לאלבום התמונות');
+    throw new Error('נא להזין שם לתיקייה');
+  }
+  if (!isModuleType(module)) {
+    throw new Error('מודול יעד לא תקין');
   }
 
-  const { formattedDate } = formatTimestampHe(nowIso);
-
   return {
-    id: `album_${randomIdSuffix()}`,
+    id: `folder_${randomIdSuffix()}`,
     name: trimmedName,
+    module,
     createdAt: nowIso,
-    formattedDate,
+    formattedDate: formatTimestampHe(nowIso).formattedDate,
   };
 }
 
 /**
- * Creates a validated VaultItem with automatic Date & Time stamping and album support.
+ * Creates a validated VaultItem with automatic Date & Time stamping,
+ * folder assignment and tags.
  */
 export function createVaultItem(
   input: CreateVaultItemInput,
@@ -216,20 +260,16 @@ export function createVaultItem(
     throw new Error('מודול יעד לא תקין');
   }
 
-  const { formattedDate, formattedTime } = formatTimestampHe(nowIso);
-
   return {
     id: `item_${randomIdSuffix()}`,
     title: trimmedTitle,
     module: input.module,
-    albumId: input.module === 'photos' && input.albumId ? input.albumId.trim() : '',
-    albumName:
-      input.module === 'photos' && input.albumName
-        ? input.albumName.trim().slice(0, 120)
-        : '',
+    folderId: input.folderId ? input.folderId.trim().slice(0, 128) : '',
+    folderName: input.folderName ? input.folderName.trim().slice(0, 120) : '',
+    tags: normalizeTags(input.tags),
     createdAt: nowIso,
-    formattedDate,
-    formattedTime,
+    formattedDate: formatTimestampHe(nowIso).formattedDate,
+    formattedTime: formatTimestampHe(nowIso).formattedTime,
     fileName: ((input.fileName || 'file').trim() || 'file').slice(0, 255),
     fileSize: Math.max(0, Number(input.fileSize) || 0),
     mimeType: (input.mimeType || 'application/octet-stream').slice(0, 128),
@@ -240,31 +280,32 @@ export function createVaultItem(
   };
 }
 
+/* ------------------------------------------------------------------ */
+/* Filtering & counts                                                  */
+/* ------------------------------------------------------------------ */
+
 /**
- * Filters and sorts vault items by module, optional photo album ID, search query, and chronological order.
+ * Filters and sorts vault items by module, optional folder ID (any
+ * module), free-text search query (title, file, notes, folder, tags,
+ * dates), and chronological order.
  */
 export function filterAndSortItems(
   items: VaultItem[],
   options: {
     moduleFilter: FilterTab;
-    albumFilter?: string; // 'all' or specific albumId
+    folderFilter?: string; // 'all' or specific folderId
     searchQuery: string;
     sortOrder?: 'newest' | 'oldest';
   }
 ): VaultItem[] {
-  const { moduleFilter, albumFilter = 'all', searchQuery, sortOrder = 'newest' } = options;
+  const { moduleFilter, folderFilter = 'all', searchQuery, sortOrder = 'newest' } = options;
   const normalizedQuery = (searchQuery || '').trim().toLowerCase();
 
   const filtered = items.filter((item) => {
     if (moduleFilter !== 'all' && item.module !== moduleFilter) {
       return false;
     }
-    if (
-      moduleFilter === 'photos' &&
-      albumFilter &&
-      albumFilter !== 'all' &&
-      item.albumId !== albumFilter
-    ) {
+    if (folderFilter && folderFilter !== 'all' && item.folderId !== folderFilter) {
       return false;
     }
     if (!normalizedQuery) return true;
@@ -273,7 +314,8 @@ export function filterAndSortItems(
       item.title,
       item.fileName,
       item.notes || '',
-      item.albumName || '',
+      item.folderName || '',
+      ...(item.tags || []),
       item.formattedDate,
       item.formattedTime,
       MODULE_META[item.module]?.label || '',
@@ -311,13 +353,13 @@ export function computeModuleCounts(items: VaultItem[]): Record<FilterTab, numbe
 }
 
 /**
- * Computes photo count per albumId.
+ * Computes item count per folderId (any module).
  */
-export function computeAlbumPhotoCounts(items: VaultItem[]): Record<string, number> {
+export function computeFolderCounts(items: VaultItem[]): Record<string, number> {
   const counts: Record<string, number> = {};
   for (const item of items) {
-    if (item.module === 'photos' && item.albumId) {
-      counts[item.albumId] = (counts[item.albumId] || 0) + 1;
+    if (item.folderId) {
+      counts[item.folderId] = (counts[item.folderId] || 0) + 1;
     }
   }
   return counts;

@@ -4,26 +4,26 @@ import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { Search, Plus, Menu } from 'lucide-react';
 import {
   VaultItem,
-  PhotoAlbum,
+  Folder,
   FilterTab,
   ModuleType,
   VaultItemUpdates,
   MODULE_META,
   createVaultItem,
-  createPhotoAlbum,
+  createFolder,
   CreateVaultItemInput,
   filterAndSortItems,
   computeModuleCounts,
-  computeAlbumPhotoCounts,
+  computeFolderCounts,
 } from '@/lib/vault-logic';
 import {
   loadLocalVaultItems,
-  loadLocalPhotoAlbums,
+  loadLocalFolders,
   saveVaultItemToDatabase,
   updateVaultItemInDatabase,
   deleteVaultItemFromDatabase,
-  savePhotoAlbumToDatabase,
-  deletePhotoAlbumFromDatabase,
+  saveFolderToDatabase,
+  deleteFolderFromDatabase,
   subscribeToUserVault,
 } from '@/lib/vault-storage';
 import { usePWAInstall } from '@/hooks/use-pwa-install';
@@ -44,7 +44,7 @@ interface UploadModalContext {
   mode: UploadMode;
   destinationMode: UploadDestinationMode;
   targetModule: ModuleType;
-  targetAlbumId?: string;
+  targetFolderId?: string;
   incomingShareDraft?: SharedDraft | null;
 }
 
@@ -52,14 +52,14 @@ interface OpenUploadOptions {
   mode?: UploadMode;
   destinationMode: UploadDestinationMode;
   targetModule?: ModuleType;
-  targetAlbumId?: string;
+  targetFolderId?: string;
   incomingShareDraft?: SharedDraft | null;
 }
 
 export default function SmartVaultCRMPage() {
   const [items, setItems] = useState<VaultItem[]>([]);
-  const [albums, setAlbums] = useState<PhotoAlbum[]>([]);
-  const [selectedAlbumId, setSelectedAlbumId] = useState<string>('all');
+  const [folders, setFolders] = useState<Folder[]>([]);
+  const [selectedFolderId, setSelectedFolderId] = useState<string>('all');
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
 
@@ -88,7 +88,7 @@ export default function SmartVaultCRMPage() {
       mode = 'upload',
       destinationMode,
       targetModule,
-      targetAlbumId,
+      targetFolderId,
       incomingShareDraft = null,
       notice = null,
     }: OpenUploadOptions & { notice?: string | null }) => {
@@ -96,7 +96,7 @@ export default function SmartVaultCRMPage() {
         mode,
         destinationMode,
         targetModule: targetModule || 'photos',
-        targetAlbumId,
+        targetFolderId,
         incomingShareDraft,
       });
       setShareNotice(notice);
@@ -136,8 +136,8 @@ export default function SmartVaultCRMPage() {
           setItems(cloudItems);
           setIsLoaded(true);
         },
-        onAlbumsChange: (cloudAlbums) => {
-          setAlbums(cloudAlbums);
+        onFoldersChange: (cloudFolders) => {
+          setFolders(cloudFolders);
         },
       });
     },
@@ -149,13 +149,13 @@ export default function SmartVaultCRMPage() {
     let mounted = true;
 
     (async () => {
-      const [localItems, localAlbums] = await Promise.all([
+      const [localItems, localFolders] = await Promise.all([
         loadLocalVaultItems(),
-        loadLocalPhotoAlbums(),
+        loadLocalFolders(),
       ]);
       if (mounted) {
         setItems(localItems);
-        setAlbums(localAlbums);
+        setFolders(localFolders);
         setIsLoaded(true);
       }
     })();
@@ -180,17 +180,17 @@ export default function SmartVaultCRMPage() {
   }, [startVaultSync, stopVaultSync]);
 
   const counts = useMemo(() => computeModuleCounts(items), [items]);
-  const albumPhotoCounts = useMemo(() => computeAlbumPhotoCounts(items), [items]);
+  const folderCounts = useMemo(() => computeFolderCounts(items), [items]);
 
   const filteredItems = useMemo(
     () =>
       filterAndSortItems(items, {
         moduleFilter: activeTab,
-        albumFilter: activeTab === 'photos' ? selectedAlbumId : 'all',
+        folderFilter: activeTab === 'all' ? 'all' : selectedFolderId,
         searchQuery,
         sortOrder: 'newest',
       }),
-    [items, activeTab, selectedAlbumId, searchQuery]
+    [items, activeTab, selectedFolderId, searchQuery]
   );
 
   const handleAuthSuccess = (email: string) => {
@@ -209,18 +209,18 @@ export default function SmartVaultCRMPage() {
     setUserEmail(null);
   };
 
-  const handleCreateAlbum = async (name: string): Promise<PhotoAlbum> => {
-    const newAlbum = createPhotoAlbum(name);
-    const updatedAlbums = await savePhotoAlbumToDatabase(newAlbum, albums);
-    setAlbums(updatedAlbums);
-    return newAlbum;
+  const handleCreateFolder = async (name: string, module: ModuleType): Promise<Folder> => {
+    const newFolder = createFolder(name, module);
+    const updatedFolders = await saveFolderToDatabase(newFolder, folders);
+    setFolders(updatedFolders);
+    return newFolder;
   };
 
-  const handleDeleteAlbum = async (albumId: string) => {
-    const updatedAlbums = await deletePhotoAlbumFromDatabase(albumId, albums);
-    setAlbums(updatedAlbums);
-    if (selectedAlbumId === albumId) {
-      setSelectedAlbumId('all');
+  const handleDeleteFolder = async (folderId: string) => {
+    const updatedFolders = await deleteFolderFromDatabase(folderId, folders);
+    setFolders(updatedFolders);
+    if (selectedFolderId === folderId) {
+      setSelectedFolderId('all');
     }
   };
 
@@ -246,8 +246,9 @@ export default function SmartVaultCRMPage() {
     activeTab === 'all' ? 'photos' : activeTab;
   const destinationModeForCurrentView: UploadDestinationMode =
     activeTab === 'all' ? 'auto' : 'fixed';
-  const currentPhotoAlbumId =
-    activeTab === 'photos' && selectedAlbumId !== 'all' ? selectedAlbumId : undefined;
+  // Uploads from inside a module view target the folder the user has open.
+  const currentFolderId =
+    activeTab !== 'all' && selectedFolderId !== 'all' ? selectedFolderId : undefined;
 
   const activeModuleTitle =
     activeTab === 'all' ? 'כל הקבצים' : MODULE_META[activeTab].label;
@@ -259,10 +260,10 @@ export default function SmartVaultCRMPage() {
         activeTab={activeTab}
         onSelectTab={setActiveTab}
         counts={counts}
-        albums={albums}
-        selectedAlbumId={selectedAlbumId}
-        albumPhotoCounts={albumPhotoCounts}
-        onSelectAlbum={setSelectedAlbumId}
+        folders={folders}
+        selectedFolderId={selectedFolderId}
+        folderCounts={folderCounts}
+        onSelectFolder={setSelectedFolderId}
         userEmail={userEmail}
         onSignIn={() => setAuthModalOpen(true)}
         onSignOut={handleSignOut}
@@ -271,7 +272,7 @@ export default function SmartVaultCRMPage() {
             mode,
             destinationMode: destinationModeForCurrentView,
             targetModule: defaultModuleForUpload,
-            targetAlbumId: currentPhotoAlbumId,
+            targetFolderId: currentFolderId,
           })
         }
         onOpenPwaModal={() => setPwaModalOpen(true)}
@@ -310,7 +311,7 @@ export default function SmartVaultCRMPage() {
                   mode: 'upload',
                   destinationMode: destinationModeForCurrentView,
                   targetModule: defaultModuleForUpload,
-                  targetAlbumId: currentPhotoAlbumId,
+                  targetFolderId: currentFolderId,
                 })
               }
               className="btn-accent h-11 px-4 sm:px-5 rounded-2xl text-sm sm:text-base font-bold flex items-center gap-2 cursor-pointer shrink-0"
@@ -356,27 +357,27 @@ export default function SmartVaultCRMPage() {
               <VaultItemsView
                 items={filteredItems}
                 activeTab={activeTab}
-                albums={albums}
-                selectedAlbumId={selectedAlbumId}
-                albumPhotoCounts={albumPhotoCounts}
-                totalPhotosCount={counts.photos}
+                folders={folders}
+                selectedFolderId={selectedFolderId}
+                folderCounts={folderCounts}
+                moduleCounts={counts}
                 searchQuery={searchQuery}
-                onSelectAlbum={setSelectedAlbumId}
-                onCreateAlbum={handleCreateAlbum}
-                onDeleteAlbum={handleDeleteAlbum}
+                onSelectFolder={setSelectedFolderId}
+                onCreateFolder={handleCreateFolder}
+                onDeleteFolder={handleDeleteFolder}
                 onSelectItem={(item) => setSelectedItem(item)}
                 onEditItem={(item) => {
                   setSelectedItem(item);
                   setPreviewStartInEdit(true);
                 }}
                 onDeleteItem={handleDeleteItem}
-                onOpenUpload={(mode, targetAlbumId) =>
+                onOpenUpload={(mode, targetFolderId) =>
                   handleOpenUploadModal({
                     mode: mode || 'upload',
                     destinationMode:
-                      targetAlbumId || activeTab !== 'all' ? 'fixed' : 'auto',
-                    targetModule: targetAlbumId ? 'photos' : defaultModuleForUpload,
-                    targetAlbumId: targetAlbumId || currentPhotoAlbumId,
+                      targetFolderId || activeTab !== 'all' ? 'fixed' : 'auto',
+                    targetModule: defaultModuleForUpload,
+                    targetFolderId: targetFolderId || currentFolderId,
                   })
                 }
               />
@@ -391,8 +392,8 @@ export default function SmartVaultCRMPage() {
         initialMode={uploadContext.mode}
         destinationMode={uploadContext.destinationMode}
         defaultModule={uploadContext.targetModule}
-        albums={albums}
-        defaultAlbumId={uploadContext.targetAlbumId}
+        folders={folders}
+        defaultFolderId={uploadContext.targetFolderId}
         incomingShareDraft={uploadContext.incomingShareDraft}
         notice={shareNotice}
         onClose={() => {
@@ -403,20 +404,20 @@ export default function SmartVaultCRMPage() {
             incomingShareDraft: null,
           }));
         }}
-        onCreateAlbum={handleCreateAlbum}
+        onCreateFolder={handleCreateFolder}
         onSaveItem={handleSaveNewItem}
       />
 
       {/* Item Preview Modal */}
       <ItemPreviewModal
         item={selectedItem}
-        albums={albums}
+        folders={folders}
         initialEditing={previewStartInEdit}
         onClose={() => {
           setSelectedItem(null);
           setPreviewStartInEdit(false);
         }}
-        onCreateAlbum={handleCreateAlbum}
+        onCreateFolder={handleCreateFolder}
         onUpdateItem={handleUpdateItem}
         onDeleteItem={handleDeleteItem}
       />

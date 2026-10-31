@@ -5,11 +5,13 @@ import {
   formatTimestampHe,
   formatFileSizeHe,
   formatDuration,
-  createPhotoAlbum,
+  createFolder,
   createVaultItem,
   filterAndSortItems,
   computeModuleCounts,
-  computeAlbumPhotoCounts,
+  computeFolderCounts,
+  parseTagsInput,
+  normalizeTags,
 } from './vault-logic.ts';
 
 test('detectModuleFromMime routes images, audio, and documents accurately', () => {
@@ -22,21 +24,32 @@ test('detectModuleFromMime routes images, audio, and documents accurately', () =
 });
 
 test('formatTimestampHe generates deterministic DD.MM.YYYY and HH:MM strings', () => {
-  const iso = '2026-10-30T14:07:00';
-  const result = formatTimestampHe(iso);
+  const result = formatTimestampHe('2026-10-30T14:07:00');
   assert.equal(result.formattedDate, '30.10.2026');
   assert.equal(result.formattedTime, '14:07');
 });
 
-test('createPhotoAlbum validates album name and assigns ID and date', () => {
-  assert.throws(() => createPhotoAlbum('   '), /נא להזין שם לאלבום/);
-  const album = createPhotoAlbum('  קבלות וחשבוניות  ', '2026-10-30T12:00:00');
-  assert.equal(album.name, 'קבלות וחשבוניות');
-  assert.equal(album.formattedDate, '30.10.2026');
-  assert.ok(album.id.startsWith('album_'));
+test('createFolder validates name/module and stamps a folder_ id', () => {
+  assert.throws(() => createFolder('   ', 'documents'), /נא להזין שם לתיקייה/);
+  const folder = createFolder('  קבלות וחשבוניות  ', 'documents', '2026-10-30T12:00:00');
+  assert.equal(folder.name, 'קבלות וחשבוניות');
+  assert.equal(folder.module, 'documents');
+  assert.equal(folder.formattedDate, '30.10.2026');
+  assert.ok(folder.id.startsWith('folder_'));
 });
 
-test('createVaultItem validates title, stamps date/time, and attaches photo album', () => {
+test('parseTagsInput splits, trims, dedupes and caps tags', () => {
+  assert.deepEqual(parseTagsInput('חשוב, עבודה ,חשוב'), ['חשוב', 'עבודה']);
+  assert.deepEqual(parseTagsInput('#2026; מס הכנסה'), ['2026', 'מס הכנסה']);
+  assert.deepEqual(parseTagsInput('   '), []);
+  const many = parseTagsInput(Array.from({length: 12}, (_, i) => `t${i}`).join(','));
+  assert.equal(many.length, 8);
+  assert.equal(parseTagsInput('x'.repeat(80))[0].length, 40);
+  assert.deepEqual(normalizeTags(['a', 5, 'a', null]), ['a']);
+  assert.deepEqual(normalizeTags('not-an-array'), []);
+});
+
+test('createVaultItem validates title, stamps date/time, folder and tags', () => {
   assert.throws(() => {
     createVaultItem({
       title: '   ',
@@ -47,89 +60,94 @@ test('createVaultItem validates title, stamps date/time, and attaches photo albu
     });
   }, /חובה להזין כותרת/);
 
-  const photoItem = createVaultItem(
-    {
-      title: 'צילום קבלה מהנייד',
-      module: 'photos',
-      albumId: 'album_123',
-      albumName: 'חשבוניות 2026',
-      fileName: 'receipt.jpg',
-      fileSize: 40960,
-      mimeType: 'image/jpeg',
-      source: 'mobile-share',
-    },
-    '2026-10-30T11:45:00'
-  );
-
-  assert.equal(photoItem.title, 'צילום קבלה מהנייד');
-  assert.equal(photoItem.module, 'photos');
-  assert.equal(photoItem.albumId, 'album_123');
-  assert.equal(photoItem.albumName, 'חשבוניות 2026');
-  assert.equal(photoItem.formattedDate, '30.10.2026');
-  assert.equal(photoItem.formattedTime, '11:45');
-});
-
-test('filterAndSortItems filters by module, photo albumId, and search query', () => {
-  const item1 = createVaultItem(
-    {
-      title: 'תמונה מאתר בנייה',
-      module: 'photos',
-      albumId: 'alb_site',
-      albumName: 'אתר בנייה',
-      fileName: 'site.jpg',
-      fileSize: 1000,
-      mimeType: 'image/jpeg',
-    },
-    '2026-10-30T10:00:00'
-  );
-  const item2 = createVaultItem(
-    {
-      title: 'תמונת משרד',
-      module: 'photos',
-      albumId: 'alb_office',
-      albumName: 'משרד',
-      fileName: 'office.jpg',
-      fileSize: 1000,
-      mimeType: 'image/jpeg',
-    },
-    '2026-10-30T11:00:00'
-  );
-  const doc1 = createVaultItem(
+  const docItem = createVaultItem(
     {
       title: 'חוזה שכירות',
       module: 'documents',
+      folderId: 'folder_123',
+      folderName: 'נדל"ן',
+      tags: ['חשוב', '2026'],
       fileName: 'lease.pdf',
       fileSize: 2000,
       mimeType: 'application/pdf',
     },
+    '2026-10-30T11:45:00'
+  );
+
+  assert.equal(docItem.module, 'documents');
+  assert.equal(docItem.folderId, 'folder_123', 'folders apply to documents too');
+  assert.equal(docItem.folderName, 'נדל"ן');
+  assert.deepEqual(docItem.tags, ['חשוב', '2026']);
+  assert.equal(docItem.formattedDate, '30.10.2026');
+  assert.equal(docItem.formattedTime, '11:45');
+});
+
+test('filterAndSortItems filters by module, folder (any module), tags and search', () => {
+  const folderDoc = createVaultItem(
+    {
+      title: 'חוזה מהבנק',
+      module: 'documents',
+      folderId: 'fld_bank',
+      folderName: 'בנק',
+      tags: ['דחוף'],
+      fileName: 'bank.pdf',
+      fileSize: 1000,
+      mimeType: 'application/pdf',
+    },
+    '2026-10-30T10:00:00'
+  );
+  const looseDoc = createVaultItem(
+    {
+      title: 'מסמך חופשי',
+      module: 'documents',
+      fileName: 'free.pdf',
+      fileSize: 1000,
+      mimeType: 'application/pdf',
+    },
+    '2026-10-30T11:00:00'
+  );
+  const photo = createVaultItem(
+    {
+      title: 'תמונת דרכון',
+      module: 'photos',
+      folderId: 'fld_docs',
+      folderName: 'תעודות',
+      fileName: 'passport.jpg',
+      fileSize: 1000,
+      mimeType: 'image/jpeg',
+    },
     '2026-10-30T12:00:00'
   );
 
-  const allItems = [item1, item2, doc1];
+  const allItems = [folderDoc, looseDoc, photo];
 
-  const siteAlbumOnly = filterAndSortItems(allItems, {
-    moduleFilter: 'photos',
-    albumFilter: 'alb_site',
+  const bankOnly = filterAndSortItems(allItems, {
+    moduleFilter: 'documents',
+    folderFilter: 'fld_bank',
     searchQuery: '',
   });
-  assert.equal(siteAlbumOnly.length, 1);
-  assert.equal(siteAlbumOnly[0].title, 'תמונה מאתר בנייה');
+  assert.equal(bankOnly.length, 1);
+  assert.equal(bankOnly[0].title, 'חוזה מהבנק');
 
-  const albumCounts = computeAlbumPhotoCounts(allItems);
-  assert.equal(albumCounts['alb_site'], 1);
-  assert.equal(albumCounts['alb_office'], 1);
+  const docFolderCounts = computeFolderCounts(allItems);
+  assert.equal(docFolderCounts['fld_bank'], 1);
+  assert.equal(docFolderCounts['fld_docs'], 1);
 
   const modCounts = computeModuleCounts(allItems);
   assert.equal(modCounts.all, 3);
-  assert.equal(modCounts.photos, 2);
-  assert.equal(modCounts.documents, 1);
-  assert.equal(modCounts.recordings, 0);
+  assert.equal(modCounts.documents, 2);
+  assert.equal(modCounts.photos, 1);
 
-  const searchHit = filterAndSortItems(allItems, {
-    moduleFilter: 'all',
-    searchQuery: 'אתר בנייה',
-  });
-  assert.equal(searchHit.length, 1);
+  // Search hits folder names and tags too (module labels are also searched,
+  // so the probe tag must not collide with "מסמכים חשובים").
+  assert.equal(
+    filterAndSortItems(allItems, { moduleFilter: 'all', searchQuery: 'בנק' }).length,
+    1
+  );
+  assert.equal(
+    filterAndSortItems(allItems, { moduleFilter: 'all', searchQuery: 'דחוף' }).length,
+    1
+  );
 });
 
 test('formatFileSizeHe and formatDuration format numbers cleanly', () => {

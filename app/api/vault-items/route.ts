@@ -19,8 +19,11 @@ export async function GET() {
       id: doc._id,
       title: doc.title,
       module: doc.module,
-      albumId: doc.albumId,
-      albumName: doc.albumName,
+      // Legacy docs stored albumId/albumName (photos-only era) — surface
+      // them uniformly as folder fields.
+      folderId: doc.folderId ?? doc.albumId ?? '',
+      folderName: doc.folderName ?? doc.albumName ?? '',
+      tags: doc.tags ?? [],
       createdAtIso: doc.createdAtIso,
       formattedDate: doc.formattedDate,
       formattedTime: doc.formattedTime,

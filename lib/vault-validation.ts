@@ -1,11 +1,9 @@
-import { ModuleType } from './vault-logic';
+import { ModuleType, normalizeTags } from './vault-logic';
 
 /**
  * Server-side payload validation for the vault API routes.
- * Mirrors the constraints the old firestore.rules enforced
- * (field whitelist, length caps, enum membership) — but clamps
- * benign overflow instead of rejecting, matching how the client
- * pre-normalized values before writing to Firestore.
+ * Clamps benign overflow instead of rejecting, mirroring how the
+ * client pre-normalizes values before writing.
  */
 
 const MODULES: ModuleType[] = ['documents', 'photos', 'recordings'];
@@ -18,8 +16,9 @@ export type VaultItemSource = (typeof SOURCES)[number];
 export interface VaultItemDoc {
   title: string;
   module: ModuleType;
-  albumId: string;
-  albumName: string;
+  folderId: string;
+  folderName: string;
+  tags: string[];
   createdAtIso: string;
   formattedDate: string;
   formattedTime: string;
@@ -35,13 +34,15 @@ export interface VaultItemDoc {
 export interface VaultItemUpdateDoc {
   title: string;
   module: ModuleType;
-  albumId: string;
-  albumName: string;
+  folderId: string;
+  folderName: string;
+  tags: string[];
   notes: string;
 }
 
-export interface PhotoAlbumDoc {
+export interface FolderDoc {
   name: string;
+  module: ModuleType;
   createdAtIso: string;
 }
 
@@ -64,28 +65,31 @@ function validId(id: unknown): string | null {
   return typeof id === 'string' && DOC_ID_RE.test(id) ? id : null;
 }
 
+function validModule(value: unknown): ModuleType | null {
+  return MODULES.includes(value as ModuleType) ? (value as ModuleType) : null;
+}
+
 export function parseVaultItemCreate(body: unknown): { id: string; doc: VaultItemDoc } | { error: string } {
   const b = (body ?? {}) as Record<string, unknown>;
   const id = validId(b.id);
   if (!id) return { error: 'מזהה פריט לא תקין' };
 
-  const moduleType = MODULES.includes(b.module as ModuleType) ? (b.module as ModuleType) : null;
+  const moduleType = validModule(b.module);
   if (!moduleType) return { error: 'סוג מודול לא תקין' };
 
   const source = SOURCES.includes(b.source as VaultItemSource)
     ? (b.source as VaultItemSource)
     : 'upload';
 
-  const createdAtIso = clampStr(b.createdAtIso, 64, new Date().toISOString());
-
   return {
     id,
     doc: {
       title: clampStr(b.title, 200, 'פריט'),
       module: moduleType,
-      albumId: moduleType === 'photos' ? clampStr(b.albumId, 128) : '',
-      albumName: moduleType === 'photos' ? clampStr(b.albumName, 120) : '',
-      createdAtIso,
+      folderId: clampStr(b.folderId, 128),
+      folderName: clampStr(b.folderName, 120),
+      tags: normalizeTags(b.tags),
+      createdAtIso: clampStr(b.createdAtIso, 64, new Date().toISOString()),
       formattedDate: clampStr(b.formattedDate, 32),
       formattedTime: clampStr(b.formattedTime, 32),
       fileName: clampStr(b.fileName, 255, 'file') || 'file',
@@ -101,28 +105,42 @@ export function parseVaultItemCreate(body: unknown): { id: string; doc: VaultIte
 
 export function parseVaultItemUpdate(body: unknown): VaultItemUpdateDoc | { error: string } {
   const b = (body ?? {}) as Record<string, unknown>;
-  const moduleType = MODULES.includes(b.module as ModuleType) ? (b.module as ModuleType) : null;
+  const moduleType = validModule(b.module);
   if (!moduleType) return { error: 'סוג מודול לא תקין' };
   return {
     title: clampStr(b.title, 200, 'פריט'),
     module: moduleType,
-    albumId: moduleType === 'photos' ? clampStr(b.albumId, 128) : '',
-    albumName: moduleType === 'photos' ? clampStr(b.albumName, 120) : '',
+    folderId: clampStr(b.folderId, 128),
+    folderName: clampStr(b.folderName, 120),
+    tags: normalizeTags(b.tags),
     notes: clampStr(b.notes, 1000),
   };
 }
 
-export function parseAlbumCreate(body: unknown): { id: string; doc: PhotoAlbumDoc } | { error: string } {
+export function parseFolderCreate(body: unknown): { id: string; doc: FolderDoc } | { error: string } {
   const b = (body ?? {}) as Record<string, unknown>;
   const id = validId(b.id);
-  if (!id) return { error: 'מזהה אלבום לא תקין' };
+  if (!id) return { error: 'מזהה תיקייה לא תקין' };
+
+  const moduleType = validModule(b.module);
+  if (!moduleType) return { error: 'סוג מודול לא תקין' };
+
   const name = clampStr(b.name, 120).trim();
-  if (!name) return { error: 'שם אלבום ריק' };
+  if (!name) return { error: 'שם תיקייה ריק' };
+
   return {
     id,
     doc: {
       name,
+      module: moduleType,
       createdAtIso: clampStr(b.createdAtIso, 64, new Date().toISOString()),
     },
   };
+}
+
+export function parseFolderRename(body: unknown): { name: string } | { error: string } {
+  const b = (body ?? {}) as Record<string, unknown>;
+  const name = clampStr(b.name, 120).trim();
+  if (!name) return { error: 'שם תיקייה ריק' };
+  return { name };
 }

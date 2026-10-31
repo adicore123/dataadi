@@ -6,14 +6,16 @@ import {
   Image as ImageIcon,
   Mic,
   Plus,
-  Folder,
+  Folder as FolderIcon,
   FolderPlus,
   Trash2,
+  Tag,
 } from 'lucide-react';
 import {
   VaultItem,
-  PhotoAlbum,
+  Folder,
   FilterTab,
+  ModuleType,
   MODULE_META,
 } from '@/lib/vault-logic';
 import { UploadMode } from '@/components/upload-share-modal';
@@ -23,155 +25,162 @@ import { cn } from '@/lib/utils';
 interface VaultItemsViewProps {
   items: VaultItem[];
   activeTab: FilterTab;
-  albums: PhotoAlbum[];
-  selectedAlbumId: string;
-  albumPhotoCounts: Record<string, number>;
-  totalPhotosCount: number;
+  folders: Folder[];
+  selectedFolderId: string;
+  folderCounts: Record<string, number>;
+  moduleCounts: Record<FilterTab, number>;
   searchQuery: string;
-  onSelectAlbum: (albumId: string) => void;
-  onCreateAlbum: (name: string) => Promise<PhotoAlbum>;
-  onDeleteAlbum: (albumId: string) => void;
+  onSelectFolder: (folderId: string) => void;
+  onCreateFolder: (name: string, module: ModuleType) => Promise<Folder>;
+  onDeleteFolder: (folderId: string) => void;
   onSelectItem: (item: VaultItem) => void;
   onEditItem: (item: VaultItem) => void;
   onDeleteItem: (id: string) => void;
-  onOpenUpload: (mode?: UploadMode, targetAlbumId?: string) => void;
+  onOpenUpload: (mode?: UploadMode, targetFolderId?: string) => void;
 }
 
 export function VaultItemsView({
   items,
   activeTab,
-  albums,
-  selectedAlbumId,
-  albumPhotoCounts,
-  totalPhotosCount,
+  folders,
+  selectedFolderId,
+  folderCounts,
+  moduleCounts,
   searchQuery,
-  onSelectAlbum,
-  onCreateAlbum,
-  onDeleteAlbum,
+  onSelectFolder,
+  onCreateFolder,
+  onDeleteFolder,
   onSelectItem,
   onEditItem,
   onDeleteItem,
   onOpenUpload,
 }: VaultItemsViewProps) {
-  const [showNewAlbumForm, setShowNewAlbumForm] = useState(false);
-  const [newAlbumInput, setNewAlbumInput] = useState('');
+  const [showNewFolderForm, setShowNewFolderForm] = useState(false);
+  const [newFolderInput, setNewFolderInput] = useState('');
 
-  const handleCreateAlbumInline = async (e: React.FormEvent) => {
+  const activeModule: ModuleType | null = activeTab === 'all' ? null : activeTab;
+  const moduleFolders = activeModule
+    ? folders.filter((f) => f.module === activeModule)
+    : [];
+
+  const handleCreateFolderInline = async (e: React.FormEvent) => {
     e.preventDefault();
-    const trimmed = newAlbumInput.trim();
-    if (!trimmed) return;
-    const created = await onCreateAlbum(trimmed);
-    setNewAlbumInput('');
-    setShowNewAlbumForm(false);
-    onSelectAlbum(created.id);
+    const trimmed = newFolderInput.trim();
+    if (!trimmed || !activeModule) return;
+    const created = await onCreateFolder(trimmed, activeModule);
+    setNewFolderInput('');
+    setShowNewFolderForm(false);
+    onSelectFolder(created.id);
   };
 
-  // Photo Albums Bar (only inside the Photos module)
-  const renderPhotoAlbumsSection = () => {
-    if (activeTab !== 'photos') return null;
+  /** Folder bar — inside each module (documents / photos / recordings). */
+  const renderFoldersSection = () => {
+    if (!activeModule) return null;
 
     return (
       <div className="glass card-sheen rounded-3xl p-5 space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2.5">
             <span className="flex items-center justify-center w-9 h-9 rounded-xl bg-gradient-to-br from-mint-500/20 to-teal-500/10 text-mint-600">
-              <Folder className="w-[18px] h-[18px]" />
+              <FolderIcon className="w-[18px] h-[18px]" />
             </span>
-            <h2 className="text-base font-bold text-slate-900">האלבומים שלי</h2>
+            <h2 className="text-base font-bold text-slate-900">
+              התיקיות שלי · {MODULE_META[activeModule].shortLabel}
+            </h2>
           </div>
 
           <button
             type="button"
-            onClick={() => setShowNewAlbumForm((prev) => !prev)}
+            onClick={() => setShowNewFolderForm((prev) => !prev)}
             className="min-h-10 px-4 py-2 rounded-xl glass text-sm font-bold text-mint-700 hover:bg-slate-900/5 active:scale-95 transition flex items-center gap-2 cursor-pointer"
           >
             <FolderPlus className="w-4 h-4" />
-            <span>אלבום חדש</span>
+            <span>תיקייה חדשה</span>
           </button>
         </div>
 
-        {showNewAlbumForm && (
+        {showNewFolderForm && (
           <form
-            onSubmit={handleCreateAlbumInline}
+            onSubmit={handleCreateFolderInline}
             className="flex flex-col sm:flex-row items-stretch gap-2"
           >
-            <label htmlFor="new-album-inline" className="sr-only">
-              שם אלבום חדש
+            <label htmlFor="new-folder-inline" className="sr-only">
+              שם תיקייה חדשה
             </label>
             <input
-              id="new-album-inline"
+              id="new-folder-inline"
               type="text"
-              value={newAlbumInput}
-              onChange={(e) => setNewAlbumInput(e.target.value)}
-              placeholder="שם האלבום החדש (למשל: קבלות, משפחה, עבודה)..."
+              value={newFolderInput}
+              onChange={(e) => setNewFolderInput(e.target.value)}
+              placeholder="שם התיקייה החדשה (למשל: קבלות, משפחה, עבודה)..."
               className="input-glass flex-1"
             />
             <button
               type="submit"
               className="btn-accent min-h-11 px-5 rounded-xl text-sm font-bold cursor-pointer"
             >
-              צור אלבום
+              צור תיקייה
             </button>
           </form>
         )}
 
         <div
           role="tablist"
-          aria-label="אלבומי תמונות"
+          aria-label={`תיקיות ${MODULE_META[activeModule].shortLabel}`}
           className="flex flex-wrap items-center gap-2"
         >
           <button
             type="button"
             role="tab"
-            aria-selected={selectedAlbumId === 'all'}
-            onClick={() => onSelectAlbum('all')}
+            aria-selected={selectedFolderId === 'all'}
+            onClick={() => onSelectFolder('all')}
             className={cn(
               'min-h-11 px-4 py-2 rounded-xl border text-sm font-bold flex items-center gap-2 transition cursor-pointer',
-              selectedAlbumId === 'all'
+              selectedFolderId === 'all'
                 ? 'chip-selected'
                 : 'glass text-slate-600 hover:bg-slate-900/5'
             )}
           >
-            <span>כל התמונות</span>
-            <span className="font-mono text-xs opacity-80">({totalPhotosCount})</span>
+            <span>הכל</span>
+            <span className="font-mono text-xs opacity-80">
+              ({moduleCounts[activeModule]})
+            </span>
           </button>
 
-          {albums.map((album) => {
-            const isSelected = selectedAlbumId === album.id;
-            const count = albumPhotoCounts[album.id] || 0;
+          {moduleFolders.map((folder) => {
+            const isSelected = selectedFolderId === folder.id;
+            const count = folderCounts[folder.id] || 0;
             return (
               <div
-                key={album.id}
+                key={folder.id}
                 className={cn(
                   'min-h-11 rounded-xl border flex items-center transition',
-                  isSelected
-                    ? 'chip-selected'
-                    : 'glass hover:bg-slate-900/5'
+                  isSelected ? 'chip-selected' : 'glass hover:bg-slate-900/5'
                 )}
               >
                 <button
                   type="button"
                   role="tab"
                   aria-selected={isSelected}
-                  onClick={() => onSelectAlbum(album.id)}
+                  onClick={() => onSelectFolder(folder.id)}
                   className={cn(
                     'px-4 py-2 text-sm font-bold flex items-center gap-2 cursor-pointer',
                     isSelected ? 'text-mint-700' : 'text-slate-600'
                   )}
                 >
-                  <Folder
+                  <FolderIcon
                     className={cn(
                       'w-4 h-4',
                       isSelected ? 'text-mint-600' : 'text-slate-500'
                     )}
                   />
-                  <span>{album.name}</span>
+                  <span>{folder.name}</span>
                   <span className="font-mono text-xs opacity-75">({count})</span>
                 </button>
                 <button
                   type="button"
-                  onClick={() => onDeleteAlbum(album.id)}
-                  aria-label={`מחיקת אלבום ${album.name}`}
+                  onClick={() => onDeleteFolder(folder.id)}
+                  aria-label={`מחיקת תיקייה ${folder.name}`}
                   className="pl-3 pr-2 h-full min-w-11 flex items-center justify-center text-slate-400 hover:text-red-600 transition-colors cursor-pointer"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
@@ -184,12 +193,62 @@ export function VaultItemsView({
     );
   };
 
+  /** Folder + tags chips shown on every item row/card. */
+  const itemChips = (item: VaultItem, variant: 'scrim' | 'meta') => {
+    if (variant === 'scrim') {
+      return (
+        <div className="flex items-center gap-2 text-[11px] text-slate-200 mt-1 flex-wrap">
+          {item.folderName && (
+            <span className="inline-flex items-center gap-1 rounded-md bg-white/15 border border-white/20 px-1.5 py-0.5 font-semibold text-mint-200 truncate max-w-[10rem]">
+              <FolderIcon className="w-3 h-3 shrink-0" />
+              <span className="truncate">{item.folderName}</span>
+            </span>
+          )}
+          {(item.tags?.length || 0) > 0 &&
+            item.tags!.slice(0, 3).map((tag) => (
+              <span
+                key={tag}
+                className="inline-flex items-center gap-1 rounded-md bg-white/10 border border-white/15 px-1.5 py-0.5 font-semibold text-slate-100 truncate max-w-[7rem]"
+              >
+                <Tag className="w-3 h-3 shrink-0" />
+                <span className="truncate">{tag}</span>
+              </span>
+            ))}
+          <span dir="ltr" className="font-mono tabular-nums">
+            {item.formattedDate}
+          </span>
+        </div>
+      );
+    }
+
+    return (
+      <>
+        {item.folderName && (
+          <span className="font-bold text-mint-700 inline-flex items-center gap-1">
+            <FolderIcon className="w-3 h-3" />
+            {item.folderName}
+          </span>
+        )}
+        {(item.tags?.length || 0) > 0 &&
+          item.tags!.map((tag) => (
+            <span
+              key={tag}
+              className="inline-flex items-center gap-1 rounded-md bg-teal-500/10 border border-teal-500/25 px-1.5 py-0.5 font-semibold text-teal-700"
+            >
+              <Tag className="w-3 h-3" />
+              {tag}
+            </span>
+          ))}
+      </>
+    );
+  };
+
   if (items.length === 0) {
-    const selectedAlbumObj = albums.find((a) => a.id === selectedAlbumId);
+    const selectedFolderObj = folders.find((f) => f.id === selectedFolderId);
 
     return (
       <div>
-        {renderPhotoAlbumsSection()}
+        {renderFoldersSection()}
         <div className="glass card-sheen rounded-4xl p-10 sm:p-14 text-center max-w-lg mx-auto my-4 relative overflow-hidden">
           {/* Ambient glow behind the icon */}
           <div
@@ -209,8 +268,8 @@ export function VaultItemsView({
             <h3 className="text-xl font-bold text-slate-900 tracking-tight">
               {searchQuery
                 ? `לא נמצאו תוצאות עבור "${searchQuery}"`
-                : activeTab === 'photos' && selectedAlbumObj
-                ? `האלבום "${selectedAlbumObj.name}" ריק`
+                : selectedFolderObj
+                ? `התיקייה "${selectedFolderObj.name}" ריקה`
                 : 'אין עדיין קבצים כאן'}
             </h3>
             <p className="text-sm text-slate-500 mt-2 leading-relaxed">
@@ -221,9 +280,7 @@ export function VaultItemsView({
               onClick={() =>
                 onOpenUpload(
                   'upload',
-                  activeTab === 'photos' && selectedAlbumId !== 'all'
-                    ? selectedAlbumId
-                    : undefined
+                  activeModule && selectedFolderId !== 'all' ? selectedFolderId : undefined
                 )
               }
               className="btn-accent mt-7 h-13 px-7 rounded-2xl text-base font-bold inline-flex items-center gap-2.5 cursor-pointer"
@@ -241,7 +298,7 @@ export function VaultItemsView({
   if (activeTab === 'photos') {
     return (
       <div>
-        {renderPhotoAlbumsSection()}
+        {renderFoldersSection()}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
           {items.map((item) => (
             <article
@@ -270,17 +327,7 @@ export function VaultItemsView({
                   <h3 className="text-[15px] font-bold text-white truncate">
                     {item.title}
                   </h3>
-                  <div className="flex items-center gap-2 text-[11px] text-slate-200 mt-1">
-                    {item.albumName && (
-                      <span className="inline-flex items-center gap-1 rounded-md bg-white/15 border border-white/20 px-1.5 py-0.5 font-semibold text-mint-200 truncate max-w-[10rem]">
-                        <Folder className="w-3 h-3 shrink-0" />
-                        <span className="truncate">{item.albumName}</span>
-                      </span>
-                    )}
-                    <span dir="ltr" className="font-mono tabular-nums">
-                      {item.formattedDate}
-                    </span>
-                  </div>
+                  {itemChips(item, 'scrim')}
                 </div>
               </button>
 
@@ -303,8 +350,10 @@ export function VaultItemsView({
 
   // Documents / Recordings — large readable rows
   return (
-    <div className="space-y-3">
-      {items.map((item) => {
+    <div className="space-y-4">
+      {renderFoldersSection()}
+      <div className="space-y-3">
+        {items.map((item) => {
         const isPhoto = item.module === 'photos';
         const isRecording = item.module === 'recordings';
 
@@ -361,14 +410,8 @@ export function VaultItemsView({
                   <span className="font-semibold text-slate-600">
                     {MODULE_META[item.module].singularLabel}
                   </span>
-                  {isPhoto && item.albumName && (
-                    <>
-                      <span aria-hidden="true">·</span>
-                      <span className="font-bold text-mint-700">
-                        אלבום: {item.albumName}
-                      </span>
-                    </>
-                  )}
+                  <span aria-hidden="true">·</span>
+                  {itemChips(item, 'meta')}
                   <span aria-hidden="true">·</span>
                   <span dir="ltr" className="font-mono text-slate-400 tabular-nums">
                     {item.formattedDate} · {item.formattedTime}
@@ -394,8 +437,9 @@ export function VaultItemsView({
               />
             </div>
           </article>
-        );
-      })}
+          );
+        })}
+      </div>
     </div>
   );
 }

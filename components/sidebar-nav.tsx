@@ -13,9 +13,9 @@ import {
   LogIn,
   LogOut,
   CheckCircle2,
-  Folder,
+  Folder as FolderIcon,
 } from 'lucide-react';
-import { FilterTab, PhotoAlbum } from '@/lib/vault-logic';
+import { FilterTab, Folder, ModuleType } from '@/lib/vault-logic';
 import { UploadMode } from '@/components/upload-share-modal';
 import { cn } from '@/lib/utils';
 
@@ -23,10 +23,10 @@ interface SidebarNavProps {
   activeTab: FilterTab;
   onSelectTab: (tab: FilterTab) => void;
   counts: Record<FilterTab, number>;
-  albums: PhotoAlbum[];
-  selectedAlbumId: string;
-  albumPhotoCounts: Record<string, number>;
-  onSelectAlbum: (albumId: string) => void;
+  folders: Folder[];
+  selectedFolderId: string;
+  folderCounts: Record<string, number>;
+  onSelectFolder: (folderId: string) => void;
   userEmail?: string | null;
   onSignIn: () => void;
   onSignOut: () => void;
@@ -44,10 +44,10 @@ export function SidebarNav({
   activeTab,
   onSelectTab,
   counts,
-  albums,
-  selectedAlbumId,
-  albumPhotoCounts,
-  onSelectAlbum,
+  folders,
+  selectedFolderId,
+  folderCounts,
+  onSelectFolder,
   userEmail,
   onSignIn,
   onSignOut,
@@ -139,8 +139,8 @@ export function SidebarNav({
                 type="button"
                 onClick={() => {
                   onSelectTab(item.id);
-                  if (item.id === 'photos') {
-                    onSelectAlbum('all');
+                  if (item.id !== 'all') {
+                    onSelectFolder('all');
                   }
                   if (isMobileDrawer) onCloseMobileDrawer();
                 }}
@@ -178,45 +178,48 @@ export function SidebarNav({
                 </span>
               </button>
 
-              {/* Photo albums nested under Photos */}
-              {item.id === 'photos' && albums.length > 0 && (
-                <div className="mr-5 pr-3 border-r border-slate-900/[0.08] space-y-1 py-1">
-                  {albums.map((alb) => {
-                    const isAlbSelected =
-                      activeTab === 'photos' && selectedAlbumId === alb.id;
-                    return (
-                      <button
-                        key={alb.id}
-                        type="button"
-                        onClick={() => {
-                          onSelectTab('photos');
-                          onSelectAlbum(alb.id);
-                          if (isMobileDrawer) onCloseMobileDrawer();
-                        }}
-                        className={cn(
-                          'w-full min-h-11 py-2 px-3 rounded-xl flex items-center justify-between text-sm transition-colors cursor-pointer border',
-                          isAlbSelected
-                            ? 'bg-mint-400/15 border-mint-500/25 text-mint-700 font-bold'
-                            : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-900/[0.04]'
-                        )}
-                      >
-                        <span className="flex items-center gap-2.5 truncate">
-                          <Folder
+              {/* Folders nested under each module */}
+              {item.id !== 'all' &&
+                folders.filter((f) => f.module === (item.id as ModuleType)).length > 0 && (
+                  <div className="mr-5 pr-3 border-r border-slate-900/[0.08] space-y-1 py-1">
+                    {folders
+                      .filter((f) => f.module === (item.id as ModuleType))
+                      .map((folder) => {
+                        const isFolderSelected =
+                          activeTab === folder.module && selectedFolderId === folder.id;
+                        return (
+                          <button
+                            key={folder.id}
+                            type="button"
+                            onClick={() => {
+                              onSelectTab(folder.module);
+                              onSelectFolder(folder.id);
+                              if (isMobileDrawer) onCloseMobileDrawer();
+                            }}
                             className={cn(
-                              'w-4 h-4 shrink-0',
-                              isAlbSelected ? 'text-mint-600' : 'text-slate-500'
+                              'w-full min-h-11 py-2 px-3 rounded-xl flex items-center justify-between text-sm transition-colors cursor-pointer border',
+                              isFolderSelected
+                                ? 'bg-mint-400/15 border-mint-500/25 text-mint-700 font-bold'
+                                : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-900/[0.04]'
                             )}
-                          />
-                          <span className="truncate">{alb.name}</span>
-                        </span>
-                        <span className="font-mono text-xs tabular-nums text-slate-500">
-                          {albumPhotoCounts[alb.id] || 0}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
+                          >
+                            <span className="flex items-center gap-2.5 truncate">
+                              <FolderIcon
+                                className={cn(
+                                  'w-4 h-4 shrink-0',
+                                  isFolderSelected ? 'text-mint-600' : 'text-slate-500'
+                                )}
+                              />
+                              <span className="truncate">{folder.name}</span>
+                            </span>
+                            <span className="font-mono text-xs tabular-nums text-slate-500">
+                              {folderCounts[folder.id] || 0}
+                            </span>
+                          </button>
+                        );
+                      })}
+                  </div>
+                )}
             </div>
           );
         })}

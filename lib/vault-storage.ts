@@ -3,10 +3,11 @@
 import {
   VaultItem,
   VaultItemUpdates,
-  PhotoAlbum,
+  Folder,
   formatTimestampHe,
   isModuleType,
   isVaultItemSource,
+  normalizeTags,
 } from './vault-logic';
 
 /**
@@ -17,9 +18,11 @@ import {
  */
 
 const CLEAN_DB_NAME = 'smart_vault_crm_clean_v2';
-const CLEAN_DB_VERSION = 1;
+// v2: photo_albums store migrated into the folders store.
+const CLEAN_DB_VERSION = 2;
 const ITEMS_STORE = 'vault_items';
-const ALBUMS_STORE = 'photo_albums';
+const FOLDERS_STORE = 'folders';
+const LEGACY_ALBUMS_STORE = 'photo_albums';
 
 // Web Share Target DB used by /public/sw.js
 const SHARE_DB_NAME = 'smart_vault_crm_db';
@@ -27,7 +30,8 @@ const SHARE_DB_VERSION = 1;
 const SHARE_STORE = 'incoming_shares';
 
 const LS_ITEMS_KEY = 'smart_vault_crm_clean_items_v2';
-const LS_ALBUMS_KEY = 'smart_vault_crm_clean_albums_v2';
+const LS_FOLDERS_KEY = 'smart_vault_crm_clean_folders_v2';
+const LS_LEGACY_ALBUMS_KEY = 'smart_vault_crm_clean_albums_v2';
 const LEGACY_LS_KEY = 'smart_vault_crm_items_v1';
 
 export interface IncomingSharedPayload {
@@ -51,7 +55,8 @@ export interface IncomingSharedPayload {
 function openDB(
   name: string,
   version: number,
-  stores: string[]
+  stores: string[],
+  migrate?: (idb: IDBDatabase, tx: IDBTransaction, oldVersion: number) => void
 ): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     if (typeof window === 'undefined' || !('indexedDB' in window)) {
@@ -59,12 +64,15 @@ function openDB(
       return;
     }
     const request = window.indexedDB.open(name, version);
-    request.onupgradeneeded = () => {
+    request.onupgradeneeded = (event) => {
       const idb = request.result;
       for (const store of stores) {
         if (!idb.objectStoreNames.contains(store)) {
           idb.createObjectStore(store, { keyPath: 'id' });
         }
+      }
+      if (migrate && event.oldVersion > 0 && event.oldVersion < version) {
+        migrate(idb, request.transaction!, event.oldVersion);
       }
     };
     request.onsuccess = () => resolve(request.result);
@@ -103,7 +111,7 @@ function purgeLegacySeedStorage(): void {
   }
 }
 
-/** IndexedDB first (clear+put), localStorage as fallback/mirror. */
+/** IndexedDB first, localStorage as fallback/mirror. */
 async function loadRows<T extends { id: string }>(
   db: IDBDatabase | null,
   store: string,
@@ -151,9 +159,39 @@ async function saveRows<T extends { id: string }>(
   }
 }
 
+/** Legacy items kept albumId/albumName — surface them as folder fields. */
+function normalizeLegacyItem(item: VaultItem): VaultItem {
+  if (item.folderId !== undefined) return item;
+  const legacy = item as VaultItem & { albumId?: string; albumName?: string };
+  return {
+    ...item,
+    folderId: legacy.albumId || '',
+    folderName: legacy.albumName || '',
+    tags: normalizeTags(item.tags),
+  };
+}
+
 async function withCleanDb<T>(fn: (db: IDBDatabase | null) => Promise<T>): Promise<T> {
+  const migrateAlbumsToFolders = (idb: IDBDatabase, tx: IDBTransaction, oldVersion: number) => {
+    if (oldVersion < 2 && idb.objectStoreNames.contains(LEGACY_ALBUMS_STORE)) {
+      const legacy = tx.objectStore(LEGACY_ALBUMS_STORE);
+      const target = tx.objectStore(FOLDERS_STORE);
+      legacy.getAll().onsuccess = (event) => {
+        const albums = (event.target as IDBRequest<{ id: string }[]>).result || [];
+        for (const album of albums) {
+          target.put({ ...album, module: 'photos' });
+        }
+      };
+    }
+  };
   try {
-    return await fn(await openDB(CLEAN_DB_NAME, CLEAN_DB_VERSION, [ITEMS_STORE, ALBUMS_STORE]));
+    const db = await openDB(
+      CLEAN_DB_NAME,
+      CLEAN_DB_VERSION,
+      [ITEMS_STORE, FOLDERS_STORE],
+      migrateAlbumsToFolders
+    );
+    return await fn(db);
   } catch {
     // No IndexedDB — run the same logic against localStorage only.
     return await fn(null);
@@ -166,20 +204,38 @@ async function withCleanDb<T>(fn: (db: IDBDatabase | null) => Promise<T>): Promi
 
 export async function loadLocalVaultItems(): Promise<VaultItem[]> {
   purgeLegacySeedStorage();
-  return withCleanDb((db) => loadRows<VaultItem>(db, ITEMS_STORE, LS_ITEMS_KEY));
+  const items = await withCleanDb((db) => loadRows<VaultItem>(db, ITEMS_STORE, LS_ITEMS_KEY));
+  return items.map(normalizeLegacyItem);
 }
 
 export async function saveLocalVaultItems(items: VaultItem[]): Promise<void> {
   await withCleanDb((db) => saveRows(db, ITEMS_STORE, LS_ITEMS_KEY, items));
 }
 
-export async function loadLocalPhotoAlbums(): Promise<PhotoAlbum[]> {
+export async function loadLocalFolders(): Promise<Folder[]> {
   purgeLegacySeedStorage();
-  return withCleanDb((db) => loadRows<PhotoAlbum>(db, ALBUMS_STORE, LS_ALBUMS_KEY));
+  const folders = await withCleanDb((db) => loadRows<Folder>(db, FOLDERS_STORE, LS_FOLDERS_KEY));
+  if (folders.length > 0) return folders;
+
+  // One-time localStorage migration: albums → photos folders.
+  if (typeof window !== 'undefined') {
+    try {
+      const raw = window.localStorage.getItem(LS_LEGACY_ALBUMS_KEY);
+      if (raw) {
+        const legacy = JSON.parse(raw) as Array<{ id: string; name: string; createdAt: string; formattedDate: string }>;
+        if (Array.isArray(legacy) && legacy.length > 0) {
+          return legacy.map((album) => ({ ...album, module: 'photos' as const }));
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }
+  return [];
 }
 
-export async function saveLocalPhotoAlbums(albums: PhotoAlbum[]): Promise<void> {
-  await withCleanDb((db) => saveRows(db, ALBUMS_STORE, LS_ALBUMS_KEY, albums));
+export async function saveLocalFolders(folders: Folder[]): Promise<void> {
+  await withCleanDb((db) => saveRows(db, FOLDERS_STORE, LS_FOLDERS_KEY, folders));
 }
 
 /* ------------------------------------------------------------------ */
@@ -280,8 +336,9 @@ interface CloudItemDoc {
   id: string;
   title: string;
   module: string;
-  albumId?: string;
-  albumName?: string;
+  folderId?: string;
+  folderName?: string;
+  tags?: string[];
   createdAtIso: string;
   formattedDate?: string;
   formattedTime?: string;
@@ -294,10 +351,11 @@ interface CloudItemDoc {
   source?: string;
 }
 
-/** Wire shape returned by GET /api/photo-albums. */
-interface CloudAlbumDoc {
+/** Wire shape returned by GET /api/folders. */
+interface CloudFolderDoc {
   id: string;
   name: string;
+  module: string;
   createdAtIso: string;
 }
 
@@ -308,8 +366,9 @@ function mapCloudItem(d: CloudItemDoc): VaultItem {
     id: d.id,
     title: d.title || '',
     module: isModuleType(d.module) ? d.module : 'documents',
-    albumId: d.albumId || '',
-    albumName: d.albumName || '',
+    folderId: d.folderId || '',
+    folderName: d.folderName || '',
+    tags: normalizeTags(d.tags),
     createdAt: iso,
     formattedDate: d.formattedDate || ts.formattedDate,
     formattedTime: d.formattedTime || ts.formattedTime,
@@ -323,11 +382,12 @@ function mapCloudItem(d: CloudItemDoc): VaultItem {
   };
 }
 
-function mapCloudAlbum(d: CloudAlbumDoc): PhotoAlbum {
+function mapCloudFolder(d: CloudFolderDoc): Folder {
   const iso = d.createdAtIso || new Date().toISOString();
   return {
     id: d.id,
     name: d.name || '',
+    module: isModuleType(d.module) ? d.module : 'photos',
     createdAt: iso,
     formattedDate: formatTimestampHe(iso).formattedDate,
   };
@@ -344,8 +404,9 @@ export async function saveVaultItemToDatabase(
   const normalizedItem: VaultItem = {
     ...item,
     dataUrl: safeDataUrl || item.dataUrl,
-    albumId: item.module === 'photos' && item.albumId ? item.albumId : '',
-    albumName: item.module === 'photos' && item.albumName ? item.albumName : '',
+    folderId: item.folderId || '',
+    folderName: item.folderName || '',
+    tags: normalizeTags(item.tags),
   };
 
   const updatedLocal = [
@@ -361,8 +422,9 @@ export async function saveVaultItemToDatabase(
         id: normalizedItem.id,
         title: normalizedItem.title.slice(0, 200),
         module: normalizedItem.module,
-        albumId: (normalizedItem.albumId || '').slice(0, 128),
-        albumName: (normalizedItem.albumName || '').slice(0, 120),
+        folderId: (normalizedItem.folderId || '').slice(0, 128),
+        folderName: (normalizedItem.folderName || '').slice(0, 120),
+        tags: normalizedItem.tags,
         createdAtIso: normalizedItem.createdAt.slice(0, 64),
         formattedDate: normalizedItem.formattedDate.slice(0, 32),
         formattedTime: normalizedItem.formattedTime.slice(0, 32),
@@ -387,15 +449,17 @@ export async function saveVaultItemToDatabase(
 }
 
 /**
- * Updates an existing VaultItem's title, module, album, or notes in the cloud AND local storage.
+ * Updates an existing VaultItem's title, module, folder, tags or notes
+ * in the cloud AND local storage.
  */
 export async function updateVaultItemInDatabase(
   id: string,
   updates: VaultItemUpdates,
   currentItems: VaultItem[]
 ): Promise<VaultItem[]> {
-  const cleanAlbumId = updates.module === 'photos' ? (updates.albumId || '').trim() : '';
-  const cleanAlbumName = updates.module === 'photos' ? (updates.albumName || '').trim() : '';
+  const cleanFolderId = (updates.folderId || '').trim().slice(0, 128);
+  const cleanFolderName = (updates.folderName || '').trim().slice(0, 120);
+  const cleanTags = normalizeTags(updates.tags);
 
   const updatedLocal = currentItems.map((item) =>
     item.id === id
@@ -403,8 +467,9 @@ export async function updateVaultItemInDatabase(
           ...item,
           title: updates.title.trim().slice(0, 200),
           module: updates.module,
-          albumId: cleanAlbumId,
-          albumName: cleanAlbumName,
+          folderId: cleanFolderId,
+          folderName: cleanFolderName,
+          tags: cleanTags,
           notes: updates.notes ? updates.notes.trim().slice(0, 1000) : undefined,
         }
       : item
@@ -417,8 +482,9 @@ export async function updateVaultItemInDatabase(
       body: JSON.stringify({
         title: updates.title.trim().slice(0, 200),
         module: updates.module,
-        albumId: cleanAlbumId.slice(0, 128),
-        albumName: cleanAlbumName.slice(0, 120),
+        folderId: cleanFolderId,
+        folderName: cleanFolderName,
+        tags: cleanTags,
         notes: (updates.notes || '').trim().slice(0, 1000),
       }),
     });
@@ -453,52 +519,79 @@ export async function deleteVaultItemFromDatabase(
 }
 
 /**
- * Saves a PhotoAlbum to the cloud AND local storage.
+ * Saves a Folder to the cloud AND local storage.
  */
-export async function savePhotoAlbumToDatabase(
-  album: PhotoAlbum,
-  currentAlbums: PhotoAlbum[]
-): Promise<PhotoAlbum[]> {
+export async function saveFolderToDatabase(
+  folder: Folder,
+  currentFolders: Folder[]
+): Promise<Folder[]> {
   const updatedLocal = [
-    album,
-    ...currentAlbums.filter((existing) => existing.id !== album.id),
+    folder,
+    ...currentFolders.filter((existing) => existing.id !== folder.id),
   ];
-  await saveLocalPhotoAlbums(updatedLocal);
+  await saveLocalFolders(updatedLocal);
 
   try {
-    const cloud = await apiFetch('/api/photo-albums', {
+    const cloud = await apiFetch('/api/folders', {
       method: 'POST',
       body: JSON.stringify({
-        id: album.id,
-        name: album.name.trim().slice(0, 120),
-        createdAtIso: album.createdAt.slice(0, 64),
+        id: folder.id,
+        name: folder.name.trim().slice(0, 120),
+        module: folder.module,
+        createdAtIso: folder.createdAt.slice(0, 64),
       }),
     });
     void cloud;
   } catch (error) {
-    reportCloudError('create', `photo_albums/${album.id}`, error);
+    reportCloudError('create', `folders/${folder.id}`, error);
   }
 
   return updatedLocal;
 }
 
 /**
- * Deletes a PhotoAlbum from the cloud AND local storage.
+ * Renames a Folder in the cloud AND local storage.
  */
-export async function deletePhotoAlbumFromDatabase(
-  albumId: string,
-  currentAlbums: PhotoAlbum[]
-): Promise<PhotoAlbum[]> {
-  const updatedLocal = currentAlbums.filter((a) => a.id !== albumId);
-  await saveLocalPhotoAlbums(updatedLocal);
+export async function renameFolderInDatabase(
+  folderId: string,
+  name: string,
+  currentFolders: Folder[]
+): Promise<Folder[]> {
+  const updatedLocal = currentFolders.map((f) =>
+    f.id === folderId ? { ...f, name: name.trim().slice(0, 120) } : f
+  );
+  await saveLocalFolders(updatedLocal);
 
   try {
-    const cloud = await apiFetch(`/api/photo-albums/${encodeURIComponent(albumId)}`, {
+    const cloud = await apiFetch(`/api/folders/${encodeURIComponent(folderId)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ name: name.trim().slice(0, 120) }),
+    });
+    void cloud;
+  } catch (error) {
+    reportCloudError('rename', `folders/${folderId}`, error);
+  }
+
+  return updatedLocal;
+}
+
+/**
+ * Deletes a Folder from the cloud AND local storage.
+ */
+export async function deleteFolderFromDatabase(
+  folderId: string,
+  currentFolders: Folder[]
+): Promise<Folder[]> {
+  const updatedLocal = currentFolders.filter((f) => f.id !== folderId);
+  await saveLocalFolders(updatedLocal);
+
+  try {
+    const cloud = await apiFetch(`/api/folders/${encodeURIComponent(folderId)}`, {
       method: 'DELETE',
     });
     void cloud;
   } catch (error) {
-    reportCloudError('delete', `photo_albums/${albumId}`, error);
+    reportCloudError('delete', `folders/${folderId}`, error);
   }
 
   return updatedLocal;
@@ -547,7 +640,7 @@ export function subscribeToUserVault(
   ownerId: string,
   callbacks: {
     onItemsChange: (items: VaultItem[]) => void;
-    onAlbumsChange: (albums: PhotoAlbum[]) => void;
+    onFoldersChange: (folders: Folder[]) => void;
   }
 ): () => void {
   void ownerId; // routing happens server-side via the session cookie
@@ -568,19 +661,19 @@ export function subscribeToUserVault(
       () => stopped
     );
 
-  const syncAlbums = () =>
+  const syncFolders = () =>
     mergeAndBackfill(
       async () => {
-        const res = await apiFetch('/api/photo-albums');
+        const res = await apiFetch('/api/folders');
         if (!res) return [];
-        return ((await res.json()) as CloudAlbumDoc[])
-          .map(mapCloudAlbum)
+        return ((await res.json()) as CloudFolderDoc[])
+          .map(mapCloudFolder)
           .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
       },
-      loadLocalPhotoAlbums,
-      saveLocalPhotoAlbums,
-      (album, current) => savePhotoAlbumToDatabase(album, current),
-      callbacks.onAlbumsChange,
+      loadLocalFolders,
+      saveLocalFolders,
+      (folder, current) => saveFolderToDatabase(folder, current),
+      callbacks.onFoldersChange,
       () => stopped
     );
 
@@ -590,7 +683,7 @@ export function subscribeToUserVault(
     try {
       await Promise.all([
         syncItems().catch((err) => console.error('vault items sync failed:', err)),
-        syncAlbums().catch((err) => console.error('photo albums sync failed:', err)),
+        syncFolders().catch((err) => console.error('folders sync failed:', err)),
       ]);
     } finally {
       syncing = false;

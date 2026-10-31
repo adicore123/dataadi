@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   Upload,
   Mic,
@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 import {
   ModuleType,
-  PhotoAlbum,
+  Folder,
   MODULE_META,
   detectModuleFromMime,
   formatFileSizeHe,
@@ -18,9 +18,9 @@ import {
   CreateVaultItemInput,
 } from '@/lib/vault-logic';
 import { ModalShell } from '@/components/ui/modal-shell';
-import { AlbumPicker } from '@/components/ui/album-picker';
+import { FolderPicker } from '@/components/ui/folder-picker';
 import { ModuleRadioGroup } from '@/components/ui/module-radio-group';
-import { cn } from '@/lib/utils';
+import { TagsInput } from '@/components/ui/tags-input';
 
 export interface SharedDraft {
   title?: string;
@@ -30,7 +30,7 @@ export interface SharedDraft {
   mimeType?: string;
   dataUrl?: string;
   suggestedModule?: ModuleType;
-  suggestedAlbumId?: string;
+  suggestedFolderId?: string;
 }
 
 export type UploadMode = 'upload' | 'record' | 'simulate-share';
@@ -41,13 +41,13 @@ export interface UploadShareModalProps {
   initialMode: UploadMode;
   destinationMode: UploadDestinationMode;
   defaultModule: ModuleType;
-  albums: PhotoAlbum[];
-  defaultAlbumId?: string;
+  folders: Folder[];
+  defaultFolderId?: string;
   incomingShareDraft?: SharedDraft | null;
   /** Optional recovery banner (e.g. shared file not captured automatically). */
   notice?: string | null;
   onClose: () => void;
-  onCreateAlbum: (name: string) => Promise<PhotoAlbum>;
+  onCreateFolder: (name: string, module: ModuleType) => Promise<Folder>;
   onSaveItem: (input: CreateVaultItemInput) => Promise<void> | void;
 }
 
@@ -62,21 +62,22 @@ export function UploadShareModal({
   initialMode,
   destinationMode,
   defaultModule,
-  albums,
-  defaultAlbumId,
+  folders,
+  defaultFolderId,
   incomingShareDraft,
   notice,
   onClose,
-  onCreateAlbum,
+  onCreateFolder,
   onSaveItem,
 }: UploadShareModalProps) {
   // null = nothing selected yet (mobile-share flow: the user always picks the
   // destination module themselves — no auto-detection preselection).
   const [selectedModule, setSelectedModule] = useState<ModuleType | null>(defaultModule);
-  const [selectedAlbumId, setSelectedAlbumId] = useState<string>('');
-  const [newAlbumName, setNewAlbumName] = useState<string>('');
+  const [selectedFolderId, setSelectedFolderId] = useState<string>('');
+  const [newFolderName, setNewFolderName] = useState<string>('');
 
   const [title, setTitle] = useState('');
+  const [tags, setTags] = useState<string[]>([]);
   const [fileName, setFileName] = useState('');
   const [fileSize, setFileSize] = useState(0);
   const [mimeType, setMimeType] = useState(DEFAULT_MIME[defaultModule]);
@@ -94,17 +95,31 @@ export function UploadShareModal({
   const recTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const chunksRef = useRef<Blob[]>([]);
 
+  // Only the folders of the currently chosen module are offered.
+  const moduleFolders = useMemo(
+    () => folders.filter((f) => f.module === (selectedModule || defaultModule)),
+    [folders, selectedModule, defaultModule]
+  );
+
+  // Keep the selection valid whenever the module (or folder list) changes.
+  useEffect(() => {
+    if (selectedFolderId && !moduleFolders.some((f) => f.id === selectedFolderId)) {
+      setSelectedFolderId(moduleFolders[0]?.id || '');
+    }
+  }, [moduleFolders, selectedFolderId]);
+
   useEffect(() => {
     if (!isOpen) return;
     setErrorMsg(null);
     setIsSubmitting(false);
     setAutoDestinationResolved(destinationMode !== 'auto');
-    setNewAlbumName('');
+    setNewFolderName('');
+    setTags([]);
 
-    const initialAlbId =
-      incomingShareDraft?.suggestedAlbumId ||
-      (defaultAlbumId && defaultAlbumId !== 'all' ? defaultAlbumId : albums[0]?.id || '');
-    setSelectedAlbumId(initialAlbId);
+    const initialFolderId =
+      incomingShareDraft?.suggestedFolderId ||
+      (defaultFolderId && defaultFolderId !== 'all' ? defaultFolderId : '');
+    setSelectedFolderId(initialFolderId);
 
     if (incomingShareDraft) {
       setTitle(incomingShareDraft.title || '');
@@ -144,23 +159,15 @@ export function UploadShareModal({
       setDurationSec(undefined);
       setSource('upload');
     }
-    // `albums` is intentionally read only when another opening input changes;
-    // album updates while the modal is open are handled by the effect below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     isOpen,
     initialMode,
     destinationMode,
     defaultModule,
-    defaultAlbumId,
+    defaultFolderId,
     incomingShareDraft,
   ]);
-
-  useEffect(() => {
-    if (isOpen && albums.length > 0 && !selectedAlbumId) {
-      setSelectedAlbumId(albums[0].id);
-    }
-  }, [isOpen, albums, selectedAlbumId]);
 
   useEffect(() => {
     return () => {
@@ -204,16 +211,16 @@ export function UploadShareModal({
     reader.readAsDataURL(file);
   };
 
-  const handleQuickCreateAlbum = async () => {
-    const trimmed = newAlbumName.trim();
+  const handleQuickCreateFolder = async () => {
+    const trimmed = newFolderName.trim();
     if (!trimmed) {
-      setErrorMsg('נא לכתוב שם לאלבום החדש');
+      setErrorMsg('נא לכתוב שם לתיקייה החדשה');
       return;
     }
     setErrorMsg(null);
-    const created = await onCreateAlbum(trimmed);
-    setSelectedAlbumId(created.id);
-    setNewAlbumName('');
+    const created = await onCreateFolder(trimmed, selectedModule || defaultModule);
+    setSelectedFolderId(created.id);
+    setNewFolderName('');
   };
 
   const startVoiceRecording = async () => {
@@ -326,20 +333,18 @@ export function UploadShareModal({
     setIsSubmitting(true);
 
     try {
-      let targetAlbumId = '';
-      let targetAlbumName = '';
-
-      if (targetModule === 'photos') {
-        if (newAlbumName.trim()) {
-          const created = await onCreateAlbum(newAlbumName.trim());
-          targetAlbumId = created.id;
-          targetAlbumName = created.name;
-        } else if (selectedAlbumId) {
-          const found = albums.find((a) => a.id === selectedAlbumId);
-          if (found) {
-            targetAlbumId = found.id;
-            targetAlbumName = found.name;
-          }
+      // Folder resolution: on-the-fly creation wins, then the selection.
+      let targetFolderId = '';
+      let targetFolderName = '';
+      if (newFolderName.trim()) {
+        const created = await onCreateFolder(newFolderName.trim(), targetModule);
+        targetFolderId = created.id;
+        targetFolderName = created.name;
+      } else if (selectedFolderId) {
+        const found = folders.find((f) => f.id === selectedFolderId && f.module === targetModule);
+        if (found) {
+          targetFolderId = found.id;
+          targetFolderName = found.name;
         }
       }
 
@@ -355,8 +360,9 @@ export function UploadShareModal({
       await onSaveItem({
         title: title.trim(),
         module: targetModule,
-        albumId: targetAlbumId || undefined,
-        albumName: targetAlbumName || undefined,
+        folderId: targetFolderId || undefined,
+        folderName: targetFolderName || undefined,
+        tags,
         fileName: finalFileName,
         fileSize: finalSize,
         mimeType,
@@ -372,23 +378,20 @@ export function UploadShareModal({
     }
   };
 
-  const fixedAlbumSelected =
-    destinationMode === 'fixed' && selectedModule === 'photos' && Boolean(defaultAlbumId);
-  // Destination questions (module + album) are asked ONLY when a file is shared
-  // in from the phone ('choose'). Uploading from inside the app saves silently
-  // to the module (and album, when one is open) the user is already viewing.
-  const showAlbumPicker =
-    destinationMode === 'choose' &&
-    selectedModule === 'photos' &&
-    !fixedAlbumSelected;
-  const fixedAlbumName = albums.find((a) => a.id === defaultAlbumId)?.name;
+  const fixedFolderSelected =
+    destinationMode === 'fixed' && Boolean(defaultFolderId);
+  const fixedFolderName = folders.find((f) => f.id === defaultFolderId)?.name;
+  // Destination questions (module + folder) are asked ONLY when a file is
+  // shared in from the phone ('choose'). Uploading from inside the app saves
+  // silently to the module (and folder, when one is open) the user views.
+  const showFolderPicker = destinationMode === 'choose' && !fixedFolderSelected;
   const destinationHint =
     destinationMode === 'choose'
       ? null
       : destinationMode === 'auto' && !autoDestinationResolved
       ? 'סוג הקובץ יזוהה אוטומטית בעת הבחירה'
       : `יישמר ב: ${MODULE_META[selectedModule || defaultModule].label}${
-          fixedAlbumSelected && fixedAlbumName ? ` · אלבום ${fixedAlbumName}` : ''
+          fixedFolderSelected && fixedFolderName ? ` · תיקייה ${fixedFolderName}` : ''
         }`;
   const titleStepNumber = destinationMode === 'choose' ? 3 : 2;
   const acceptedFileTypes =
@@ -449,14 +452,13 @@ export function UploadShareModal({
 
           <label
             htmlFor="vault-file-input"
-            className={cn(
-              'flex flex-col items-center justify-center w-full p-6 border-2 border-dashed rounded-3xl transition-all cursor-pointer text-center gap-2.5',
+            className={`flex flex-col items-center justify-center w-full p-6 border-2 border-dashed rounded-3xl transition-all cursor-pointer text-center gap-2.5 ${
               fileName
                 ? 'border-mint-500/50 bg-mint-500/[0.06]'
                 : destinationMode === 'choose'
                 ? 'border-amber-500/50 bg-amber-400/[0.06] hover:border-amber-500/70 hover:bg-amber-400/[0.09]'
                 : 'border-slate-900/[0.14] bg-slate-900/[0.02] hover:border-mint-500/40 hover:bg-mint-500/[0.04]'
-            )}
+            }`}
           >
             <span className="flex items-center justify-center w-12 h-12 rounded-2xl bg-gradient-to-br from-mint-500/20 to-teal-500/10 text-mint-600">
               <Upload className="w-6 h-6" />
@@ -532,48 +534,52 @@ export function UploadShareModal({
           </div>
         )}
 
-        {/* IF PHOTOS: Which Album? */}
-        {showAlbumPicker && (
-          <AlbumPicker
-            albums={albums}
-            selectedAlbumId={selectedAlbumId}
-            newAlbumName={newAlbumName}
-            onSelectAlbum={setSelectedAlbumId}
-            onNewAlbumNameChange={(v) => {
-              setNewAlbumName(v);
+        {/* Destination folder — any module, mobile share flow. */}
+        {showFolderPicker && selectedModule && (
+          <FolderPicker
+            folders={moduleFolders}
+            selectedFolderId={selectedFolderId}
+            newFolderName={newFolderName}
+            onSelectFolder={setSelectedFolderId}
+            onNewFolderNameChange={(v) => {
+              setNewFolderName(v);
               if (errorMsg) setErrorMsg(null);
             }}
-            onQuickCreate={handleQuickCreateAlbum}
-            question="לאיזה אלבום להכניס את התמונה?"
-            inputId="new-photo-album-input"
+            onQuickCreate={handleQuickCreateFolder}
+            question={`לאיזו תיקייה להכניס את הקובץ? (${MODULE_META[selectedModule].shortLabel})`}
+            inputId="upload-new-folder-input"
           />
         )}
 
-        {/* STEP 3: Title */}
-        <div className="space-y-2">
-          <label
-            htmlFor="item-title-input"
-            className="flex items-center gap-2 text-sm font-bold text-slate-900"
-          >
-            <span className="flex items-center justify-center w-6 h-6 rounded-lg bg-mint-500/15 text-mint-700 text-xs font-bold shrink-0">
-              {titleStepNumber}
-            </span>
-            תן כותרת לקובץ
-          </label>
-          <input
-            id="item-title-input"
-            type="text"
-            value={title}
-            onChange={(e) => {
-              setTitle(e.target.value);
-              if (errorMsg) setErrorMsg(null);
-            }}
-            placeholder="לדוגמה: חוזה שכירות / צילום קבלה / הקלטת פגישה..."
-            className="input-glass w-full h-12 px-4 text-base rounded-2xl focus:bg-white transition-colors"
-          />
-          <p className="text-xs text-slate-400">
-            התאריך והשעה נשמרים אוטומטית עם הקובץ.
-          </p>
+        {/* STEP 3: Title + tags */}
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <label
+              htmlFor="item-title-input"
+              className="flex items-center gap-2 text-sm font-bold text-slate-900"
+            >
+              <span className="flex items-center justify-center w-6 h-6 rounded-lg bg-mint-500/15 text-mint-700 text-xs font-bold shrink-0">
+                {titleStepNumber}
+              </span>
+              תן כותרת לקובץ
+            </label>
+            <input
+              id="item-title-input"
+              type="text"
+              value={title}
+              onChange={(e) => {
+                setTitle(e.target.value);
+                if (errorMsg) setErrorMsg(null);
+              }}
+              placeholder="לדוגמה: חוזה שכירות / צילום קבלה / הקלטת פגישה..."
+              className="input-glass w-full h-12 px-4 text-base rounded-2xl focus:bg-white transition-colors"
+            />
+            <p className="text-xs text-slate-400">
+              התאריך והשעה נשמרים אוטומטית עם הקובץ.
+            </p>
+          </div>
+
+          <TagsInput tags={tags} onChange={setTags} inputId="upload-item-tags" />
         </div>
 
         {errorMsg && (

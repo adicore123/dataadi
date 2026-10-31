@@ -9,12 +9,14 @@ import {
   Mic,
   Check,
   Edit3,
-  Folder,
+  Folder as FolderIcon,
+  Tag,
 } from 'lucide-react';
 import {
   VaultItem,
-  PhotoAlbum,
+  Folder,
   VaultItemUpdates,
+  ModuleType,
   MODULE_META,
   formatFileSizeHe,
   formatDuration,
@@ -22,34 +24,36 @@ import {
 import { shareVaultItem } from '@/lib/share';
 import { WhatsAppIcon } from '@/components/whatsapp-icon';
 import { ModalShell } from '@/components/ui/modal-shell';
-import { AlbumPicker } from '@/components/ui/album-picker';
+import { FolderPicker } from '@/components/ui/folder-picker';
 import { ModuleRadioGroup } from '@/components/ui/module-radio-group';
+import { TagsInput } from '@/components/ui/tags-input';
 
 interface ItemPreviewModalProps {
   item: VaultItem | null;
-  albums: PhotoAlbum[];
+  folders: Folder[];
   /** Open straight into edit mode (quick-edit pencil buttons). */
   initialEditing?: boolean;
   onClose: () => void;
-  onCreateAlbum: (name: string) => Promise<PhotoAlbum>;
+  onCreateFolder: (name: string, module: ModuleType) => Promise<Folder>;
   onUpdateItem: (id: string, updates: VaultItemUpdates) => void;
   onDeleteItem: (id: string) => void;
 }
 
 export function ItemPreviewModal({
   item,
-  albums,
+  folders,
   initialEditing = false,
   onClose,
-  onCreateAlbum,
+  onCreateFolder,
   onUpdateItem,
   onDeleteItem,
 }: ItemPreviewModalProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editTitle, setEditTitle] = useState('');
-  const [editModule, setEditModule] = useState<VaultItem['module']>('documents');
-  const [editAlbumId, setEditAlbumId] = useState('');
-  const [newAlbumName, setNewAlbumName] = useState('');
+  const [editModule, setEditModule] = useState<ModuleType>('documents');
+  const [editFolderId, setEditFolderId] = useState('');
+  const [newFolderName, setNewFolderName] = useState('');
+  const [editTags, setEditTags] = useState<string[]>([]);
   const [editNotes, setEditNotes] = useState('');
 
   useEffect(() => {
@@ -57,37 +61,39 @@ export function ItemPreviewModal({
       setIsEditing(initialEditing);
       setEditTitle(item.title);
       setEditModule(item.module);
-      setEditAlbumId(item.albumId || '');
-      setNewAlbumName('');
+      setEditFolderId(item.folderId || '');
+      setNewFolderName('');
+      setEditTags(item.tags ? [...item.tags] : []);
       setEditNotes(item.notes || '');
     }
   }, [item, initialEditing]);
 
   if (!item) return null;
 
+  const moduleFolders = folders.filter((f) => f.module === editModule);
+
   const handleSaveEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editTitle.trim()) return;
 
-    let finalAlbumId = editAlbumId;
-    let finalAlbumName = '';
+    let finalFolderId = editFolderId;
+    let finalFolderName = '';
 
-    if (editModule === 'photos') {
-      if (newAlbumName.trim()) {
-        const created = await onCreateAlbum(newAlbumName.trim());
-        finalAlbumId = created.id;
-        finalAlbumName = created.name;
-      } else if (finalAlbumId) {
-        const found = albums.find((a) => a.id === finalAlbumId);
-        finalAlbumName = found ? found.name : '';
-      }
+    if (newFolderName.trim()) {
+      const created = await onCreateFolder(newFolderName.trim(), editModule);
+      finalFolderId = created.id;
+      finalFolderName = created.name;
+    } else if (finalFolderId) {
+      const found = folders.find((f) => f.id === finalFolderId);
+      finalFolderName = found ? found.name : '';
     }
 
     onUpdateItem(item.id, {
       title: editTitle.trim(),
       module: editModule,
-      albumId: editModule === 'photos' ? finalAlbumId : '',
-      albumName: editModule === 'photos' ? finalAlbumName : '',
+      folderId: finalFolderId,
+      folderName: finalFolderName,
+      tags: editTags,
       notes: editNotes.trim() || undefined,
     });
     setIsEditing(false);
@@ -105,12 +111,22 @@ export function ItemPreviewModal({
       <span className="font-semibold text-slate-700 rounded-md bg-slate-900/[0.05] border border-slate-900/[0.08] px-1.5 py-0.5">
         {MODULE_META[item.module].label}
       </span>
-      {item.module === 'photos' && item.albumName && (
+      {item.folderName && (
         <span className="font-bold text-mint-700 rounded-md bg-mint-500/10 border border-mint-500/25 px-1.5 py-0.5 inline-flex items-center gap-1">
-          <Folder className="w-3 h-3" />
-          {item.albumName}
+          <FolderIcon className="w-3 h-3" />
+          {item.folderName}
         </span>
       )}
+      {(item.tags?.length || 0) > 0 &&
+        item.tags!.map((tag) => (
+          <span
+            key={tag}
+            className="inline-flex items-center gap-1 rounded-md bg-teal-500/10 border border-teal-500/25 px-1.5 py-0.5 font-semibold text-teal-700"
+          >
+            <Tag className="w-3 h-3" />
+            {tag}
+          </span>
+        ))}
       <span dir="ltr" className="font-mono">
         {item.formattedDate} · {item.formattedTime}
       </span>
@@ -140,7 +156,7 @@ export function ItemPreviewModal({
               className="min-h-10 py-2 px-3.5 rounded-xl glass text-xs font-semibold text-slate-700 hover:bg-slate-900/5 active:scale-95 transition flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
             >
               <Edit3 className="w-3.5 h-3.5 text-mint-600" />
-              <span>ערוך כותרת / מודול / אלבום</span>
+              <span>ערוך כותרת / מודול / תיקייה</span>
             </button>
 
             {item.dataUrl && (
@@ -276,30 +292,37 @@ export function ItemPreviewModal({
             </span>
             <ModuleRadioGroup
               value={editModule}
-              onChange={setEditModule}
+              onChange={(m) => {
+                setEditModule(m);
+                setEditFolderId('');
+                setNewFolderName('');
+              }}
               variant="compact"
             />
           </div>
 
-          {editModule === 'photos' && (
-            <AlbumPicker
-              albums={albums}
-              selectedAlbumId={editAlbumId}
-              newAlbumName={newAlbumName}
-              onSelectAlbum={setEditAlbumId}
-              onNewAlbumNameChange={setNewAlbumName}
-              onQuickCreate={async () => {
-                const trimmed = newAlbumName.trim();
-                if (!trimmed) return;
-                const created = await onCreateAlbum(trimmed);
-                setEditAlbumId(created.id);
-                setNewAlbumName('');
-              }}
-              question="שיוך לאלבום תמונות:"
-              inputId="edit-new-album"
-              compact
-            />
-          )}
+          <FolderPicker
+            folders={moduleFolders}
+            selectedFolderId={editFolderId}
+            newFolderName={newFolderName}
+            onSelectFolder={(id) => {
+              setEditFolderId(id);
+              setNewFolderName('');
+            }}
+            onNewFolderNameChange={setNewFolderName}
+            onQuickCreate={async () => {
+              const trimmed = newFolderName.trim();
+              if (!trimmed) return;
+              const created = await onCreateFolder(trimmed, editModule);
+              setEditFolderId(created.id);
+              setNewFolderName('');
+            }}
+            question={`תיקייה ב${MODULE_META[editModule].shortLabel}:`}
+            inputId="edit-new-folder"
+            compact
+          />
+
+          <TagsInput tags={editTags} onChange={setEditTags} inputId="edit-item-tags" compact />
 
           <div>
             <label

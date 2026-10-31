@@ -12,16 +12,20 @@ import { MongoClient, type Collection } from 'mongodb';
 const DB_NAME = 'vault';
 
 /**
- * Document shapes. `_id` is the client-generated id (item_..., album_...)
+ * Document shapes. `_id` is the client-generated id (item_..., folder_...)
  * — a plain string, mirroring the old Firestore document ids.
+ * Pre-folder items may still carry legacy albumId/albumName fields.
  */
 export interface VaultItemRecord {
   _id: string;
   ownerId: string;
   title: string;
   module: string;
-  albumId: string;
-  albumName: string;
+  folderId?: string;
+  folderName?: string;
+  albumId?: string;
+  albumName?: string;
+  tags?: string[];
   createdAtIso: string;
   formattedDate: string;
   formattedTime: string;
@@ -36,10 +40,11 @@ export interface VaultItemRecord {
   updatedAt: Date;
 }
 
-export interface PhotoAlbumRecord {
+export interface FolderRecord {
   _id: string;
   ownerId: string;
   name: string;
+  module: string;
   createdAtIso: string;
   createdAt: Date;
   updatedAt: Date;
@@ -67,7 +72,7 @@ async function createClient(): Promise<MongoClient> {
   const db = client.db(DB_NAME);
   await Promise.all([
     db.collection('vault_items').createIndex({ ownerId: 1, createdAtIso: -1 }),
-    db.collection('photo_albums').createIndex({ ownerId: 1, createdAtIso: -1 }),
+    db.collection('folders').createIndex({ ownerId: 1, createdAtIso: -1 }),
     db.collection('users').createIndex({ email: 1 }, { unique: true }),
   ]);
   return client;
@@ -93,8 +98,8 @@ export async function getVaultItemsCollection(): Promise<Collection<VaultItemRec
   return (await getDb()).collection<VaultItemRecord>('vault_items');
 }
 
-export async function getPhotoAlbumsCollection(): Promise<Collection<PhotoAlbumRecord>> {
-  return (await getDb()).collection<PhotoAlbumRecord>('photo_albums');
+export async function getFoldersCollection(): Promise<Collection<FolderRecord>> {
+  return (await getDb()).collection<FolderRecord>('folders');
 }
 
 export async function getUsersCollection(): Promise<Collection<UserRecord>> {
