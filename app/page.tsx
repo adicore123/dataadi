@@ -42,6 +42,16 @@ import { ItemPreviewModal } from '@/components/item-preview-modal';
 import { PwaInstallModal } from '@/components/pwa-install-modal';
 import { VaultItemsView } from '@/components/vault-items-view';
 
+/** Fast base64 data-URL conversion for a fetched Blob (native FileReader). */
+function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(blob);
+  });
+}
+
 interface UploadModalContext {
   mode: UploadMode;
   destinationMode: UploadDestinationMode;
@@ -160,6 +170,51 @@ export default function SmartVaultCRMPage() {
           } else {
             // The service worker redirected here but the payload is gone.
             openShareRecovery(params.get('name'));
+          }
+          window.history.replaceState({}, '', '/');
+        } else if (isShared === 'pickup') {
+          // Native APK bridge: the shared file's real bytes are served by a
+          // one-shot local server inside the app (127.0.0.1). Fetch them and
+          // open the upload modal with the file ALREADY attached — the user
+          // only picks the destination module. Falls back to the manual
+          // intake flow on any failure.
+          const port = params.get('port');
+          const token = params.get('token');
+          const pickupName = params.get('name') || 'shared-file';
+          const pickupType = params.get('type') || 'application/octet-stream';
+          const pickupSize = Number(params.get('size')) || 0;
+
+          if (!port || !token) {
+            openShareRecovery(pickupName);
+          } else {
+            try {
+              const res = await fetch(
+                `http://127.0.0.1:${port}/pickup?token=${encodeURIComponent(token)}`
+              );
+              if (!res.ok) throw new Error('pickup rejected');
+              const blob = await res.blob();
+              const dataUrl = await blobToDataUrl(blob);
+              if (!mounted) return;
+              setShareNotice(
+                `הקובץ "${pickupName}" הועבר אוטומטית מהשיתוף — בחר/י לאיזה מודול להכניס אותו ושמור`
+              );
+              setUploadContext({
+                mode: 'upload',
+                destinationMode: 'choose',
+                targetModule: 'photos',
+                incomingShareDraft: {
+                  title: pickupName.replace(/\.[^/.]+$/, ''),
+                  notes: '',
+                  fileName: pickupName,
+                  fileSize: pickupSize || blob.size,
+                  mimeType: pickupType || blob.type,
+                  dataUrl,
+                },
+              });
+              setUploadModalOpen(true);
+            } catch {
+              if (mounted) openShareRecovery(pickupName);
+            }
           }
           window.history.replaceState({}, '', '/');
         } else if (isShared === 'error') {
