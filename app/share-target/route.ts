@@ -39,10 +39,25 @@ export async function POST(request: NextRequest) {
   return NextResponse.redirect(url, 303);
 }
 
-// A stray GET (e.g. an app linking to the action URL) goes to the recovery
-// flow instead of a bare 404.
+// GET is the Android TWA share path (the APK's baked share_target uses GET —
+// the reliable route; POST file delivery depends on Chrome internals).
+// Text shares arrive with title/text/url params; file shares arrive with no
+// usable params (GET cannot carry file bytes) and fall into the recovery
+// flow where the user attaches the file manually.
 export async function GET(request: NextRequest) {
+  const requestUrl = new URL(request.url);
+  const title = requestUrl.searchParams.get('title') || '';
+  const text = requestUrl.searchParams.get('text') || '';
+  const sharedUrl = requestUrl.searchParams.get('url') || '';
   const url = new URL('/', request.url);
-  url.searchParams.set('shared', 'error');
+
+  if (title || text || sharedUrl) {
+    if (title) url.searchParams.set('title', title);
+    if (text || sharedUrl) {
+      url.searchParams.set('text', [text, sharedUrl].filter(Boolean).join(' '));
+    }
+  } else {
+    url.searchParams.set('shared', 'error');
+  }
   return NextResponse.redirect(url, 303);
 }
