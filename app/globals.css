@@ -1,9 +1,13 @@
 @import "tailwindcss";
 
+/* Class-based dark mode (toggled on <html>, persisted in localStorage). */
+@custom-variant dark (&:where(.dark, .dark *));
+
 /*
  * Smart Vault — Design System "Vault Light 2026"
  * Daylight canvas + pastel aurora, porcelain glass surfaces,
  * emerald→teal accent gradient, Swiss-minimal typography.
+ * Dark mode flips the slate ramp + glass surfaces via .dark overrides.
  */
 
 @theme {
@@ -42,6 +46,29 @@
     color: var(--color-slate-800);
     -webkit-tap-highlight-color: transparent;
     text-rendering: optimizeLegibility;
+  }
+
+  /* Dark mode — flip the ramps so every slate-based utility inverts
+     coherently, then sink the glass surfaces into night tones. */
+  .dark {
+    --color-vault-50: #0b1220;
+    --color-vault-100: #101a2c;
+    --color-vault-200: #16233a;
+    --color-vault-300: #1e2f4a;
+
+    --color-slate-900: #f1f5f9;
+    --color-slate-800: #e2e8f0;
+    --color-slate-700: #cbd5e1;
+    --color-slate-600: #b6c2d2;
+    --color-slate-500: #94a3b8;
+    --color-slate-400: #7c8aa0;
+    --color-slate-200: #334155;
+    --color-slate-100: #26334a;
+  }
+
+  .dark body {
+    background-color: var(--color-vault-50);
+    color: var(--color-slate-800);
   }
 
   /* Keyboard users always get a visible, on-brand focus ring. */
@@ -95,6 +122,14 @@
       linear-gradient(180deg, #fbfdfe 0%, #eef5f9 100%);
   }
 
+  .dark .aurora-canvas {
+    background:
+      radial-gradient(52rem 34rem at 88% -8%, rgb(16 185 129 / 0.14), transparent 60%),
+      radial-gradient(44rem 30rem at -12% 24%, rgb(59 130 246 / 0.1), transparent 60%),
+      radial-gradient(40rem 40rem at 50% 118%, rgb(139 92 246 / 0.09), transparent 62%),
+      linear-gradient(180deg, #0b1220 0%, #0d1626 100%);
+  }
+
   /* Frosted porcelain surface (cards, sheets, docks). */
   .glass {
     background: rgb(255 255 255 / 0.65);
@@ -108,6 +143,16 @@
     border: 1px solid rgb(15 23 42 / 0.1);
     backdrop-filter: blur(24px) saturate(160%);
     -webkit-backdrop-filter: blur(24px) saturate(160%);
+  }
+
+  /* Night variants of the glass surfaces. */
+  .dark .glass {
+    background: rgb(22 33 54 / 0.6);
+    border-color: rgb(241 245 249 / 0.09);
+  }
+  .dark .glass-strong {
+    background: rgb(16 26 44 / 0.88);
+    border-color: rgb(241 245 249 / 0.1);
   }
 
   /* Signature accent gradient for primary actions. */
@@ -163,6 +208,26 @@
   .input-glass:focus {
     outline: none;
     border-color: rgb(16 185 129 / 0.6);
+    background: rgb(255 255 255 / 0.9);
+  }
+  .dark .input-glass {
+    background: rgb(22 33 54 / 0.6);
+    border-color: rgb(241 245 249 / 0.1);
+  }
+  .dark .input-glass:focus {
+    background: rgb(16 26 44 / 0.95);
+  }
+
+  /* Night sheet handle + scrollbars. */
+  .dark .sheet-handle {
+    background: rgb(241 245 249 / 0.22);
+  }
+  .dark ::selection {
+    background: var(--color-mint-500);
+    color: #ffffff;
+  }
+  .dark .chip-selected {
+    color: var(--color-mint-300);
   }
 
   /* Safe-area helpers for iOS PWA (standalone + browser). */

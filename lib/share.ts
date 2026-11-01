@@ -47,3 +47,42 @@ export async function shareVaultItem(item: VaultItem): Promise<boolean> {
     return fallbackToWhatsApp();
   }
 }
+
+/**
+ * Shares several items at once through the native share sheet (all real
+ * files attached). Falls back to wa.me with the titles if unsupported.
+ */
+export async function shareVaultItems(items: VaultItem[]): Promise<boolean> {
+  if (items.length === 0) return false;
+  if (items.length === 1) return shareVaultItem(items[0]);
+
+  const nav = typeof navigator !== 'undefined' ? navigator : undefined;
+  const fallback = () => {
+    if (typeof window !== 'undefined') {
+      window.open(
+        'https://wa.me/?text=' + encodeURIComponent(items.map((i) => i.title).join(', ')),
+        '_blank'
+      );
+    }
+    return false;
+  };
+  if (!nav || !nav.share) return fallback();
+
+  try {
+    const files: File[] = [];
+    for (const item of items) {
+      if (!item.dataUrl) continue;
+      const blob = await (await fetch(item.dataUrl)).blob();
+      files.push(new File([blob], item.fileName, { type: blob.type || item.mimeType }));
+    }
+    if (files.length === 0) return fallback();
+    if (typeof nav.canShare === 'function' && !nav.canShare({ files })) {
+      return fallback();
+    }
+    await nav.share({ files, title: `${items.length} קבצים מהכספת` });
+    return true;
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'AbortError') return true;
+    return fallback();
+  }
+}

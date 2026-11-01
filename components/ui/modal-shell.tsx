@@ -75,7 +75,7 @@ export function ModalShell({
         <div className="p-5 sm:p-6 overflow-y-auto flex-1">{children}</div>
 
         {footer && (
-          <div className="px-5 sm:px-6 py-4 border-t border-slate-900/[0.08] pb-safe bg-white/40">
+          <div className="px-5 sm:px-6 py-4 border-t border-slate-900/[0.08] pb-safe bg-white/40 dark:bg-white/[0.04]">
             {footer}
           </div>
         )}

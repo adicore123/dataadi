@@ -1,4 +1,5 @@
-const CACHE_NAME = 'smart-vault-crm-v1';
+const CACHE_NAME = 'smart-vault-crm-v2';
+const STATIC_CACHE = 'smart-vault-static-v2';
 const DB_NAME = 'smart_vault_crm_db';
 const DB_VERSION = 1;
 const SHARE_STORE = 'incoming_shares';
@@ -13,7 +14,18 @@ self.addEventListener('install', (event) => {
 });
 
 self.addEventListener('activate', (event) => {
-  event.waitUntil(self.clients.claim());
+  event.waitUntil(
+    (async () => {
+      // Drop caches from older versions.
+      const names = await caches.keys();
+      await Promise.all(
+        names
+          .filter((n) => n !== CACHE_NAME && n !== STATIC_CACHE)
+          .map((n) => caches.delete(n))
+      );
+      await self.clients.claim();
+    })()
+  );
 });
 
 function openShareDB() {
@@ -81,5 +93,49 @@ self.addEventListener('fetch', (event) => {
       })()
     );
     return;
+  }
+
+  // Never cache API traffic — it must always hit the network.
+  if (url.pathname.startsWith('/api/')) return;
+
+  // Hashed build assets — cache-first (they are immutable).
+  if (url.origin === self.location.origin && url.pathname.startsWith('/_next/static/')) {
+    event.respondWith(
+      (async () => {
+        const cached = await caches.match(event.request);
+        if (cached) return cached;
+        try {
+          const res = await fetch(event.request);
+          if (res.ok) {
+            const cache = await caches.open(STATIC_CACHE);
+            cache.put(event.request, res.clone());
+          }
+          return res;
+        } catch {
+          return cached || Response.error();
+        }
+      })()
+    );
+    return;
+  }
+
+  // Navigations (the app shell) — network-first with offline fallback,
+  // so the vault keeps opening from the plane / dead zone.
+  if (event.request.mode === 'navigate') {
+    event.respondWith(
+      (async () => {
+        try {
+          const res = await fetch(event.request);
+          if (res.ok) {
+            const cache = await caches.open(CACHE_NAME);
+            cache.put('/', res.clone());
+          }
+          return res;
+        } catch {
+          const cached = (await caches.match(event.request)) || (await caches.match('/'));
+          return cached || Response.error();
+        }
+      })()
+    );
   }
 });

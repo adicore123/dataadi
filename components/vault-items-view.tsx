@@ -13,6 +13,7 @@ import {
   Star,
   RotateCcw,
   Search as SearchIcon,
+  Check,
 } from 'lucide-react';
 import {
   VaultItem,
@@ -46,6 +47,10 @@ interface VaultItemsViewProps {
   viewTrash?: boolean;
   onRestoreItem?: (id: string) => void;
   onDeleteForever?: (id: string) => void;
+  /** Multi-select mode — rows/cards toggle selection instead of opening. */
+  selectionMode?: boolean;
+  selectedIds?: string[];
+  onToggleSelect?: (id: string) => void;
 }
 
 const ALL_MODULES: ModuleType[] = [...MODULE_IDS];
@@ -69,9 +74,23 @@ export function VaultItemsView({
   viewTrash = false,
   onRestoreItem,
   onDeleteForever,
+  selectionMode = false,
+  selectedIds = [],
+  onToggleSelect,
 }: VaultItemsViewProps) {
   const [showNewFolderForm, setShowNewFolderForm] = useState(false);
   const [newFolderInput, setNewFolderInput] = useState('');
+
+  const isSelected = (id: string) => selectedIds.includes(id);
+  /** In selection mode every surface toggles selection; otherwise opens. */
+  const handleSurfaceClick = (item: VaultItem, open: () => void) => {
+    if (selectionMode) onToggleSelect?.(item.id);
+    else open();
+  };
+  const selectionRing = (id: string) =>
+    selectionMode && isSelected(id)
+      ? 'ring-2 ring-mint-500 ring-offset-2 ring-offset-transparent'
+      : '';
 
   const activeModule: ModuleType | null = activeTab === 'all' ? null : activeTab;
   const moduleFolders = activeModule
@@ -425,11 +444,27 @@ export function VaultItemsView({
           {items.map((item) => (
             <article
               key={item.id}
-              className="glass card-sheen rounded-3xl overflow-hidden flex flex-col justify-between group hover:border-mint-500/30 hover:-translate-y-0.5 transition-all"
+              className={cn(
+                'glass card-sheen rounded-3xl overflow-hidden flex flex-col justify-between group hover:border-mint-500/30 hover:-translate-y-0.5 transition-all relative',
+                selectionRing(item.id)
+              )}
             >
+              {selectionMode && (
+                <span
+                  aria-hidden="true"
+                  className={cn(
+                    'absolute top-3 left-3 z-10 w-7 h-7 rounded-full border-2 flex items-center justify-center transition',
+                    isSelected(item.id)
+                      ? 'bg-mint-500 border-mint-500 text-white'
+                      : 'bg-white/70 border-slate-400/60'
+                  )}
+                >
+                  {isSelected(item.id) && <Check className="w-4 h-4" />}
+                </span>
+              )}
               <button
                 type="button"
-                onClick={() => onSelectItem(item)}
+                onClick={() => handleSurfaceClick(item, () => onSelectItem(item))}
                 className="relative w-full aspect-[4/3] bg-vault-200 overflow-hidden block cursor-pointer"
               >
                 {item.dataUrl ? (
@@ -458,7 +493,7 @@ export function VaultItemsView({
                   item={item}
                   size="sm"
                   openLabel="פתיחת תמונה"
-                  onOpen={() => onSelectItem(item)}
+                  onOpen={() => handleSurfaceClick(item, () => onSelectItem(item))}
                   onEdit={() => onEditItem(item)}
                   onDelete={() => onDeleteItem(item.id)}
                 />
@@ -494,13 +529,32 @@ export function VaultItemsView({
     return (
       <article
         key={item.id}
-        className="glass card-sheen rounded-3xl hover:border-mint-500/30 hover:-translate-y-0.5 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4 group"
+        className={cn(
+          'glass card-sheen rounded-3xl hover:border-mint-500/30 hover:-translate-y-0.5 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4 group',
+          selectionRing(item.id)
+        )}
       >
         <div className="flex items-center gap-4 min-w-0 flex-1 p-4 sm:p-5 sm:pb-5">
+          {selectionMode && (
+            <button
+              type="button"
+              onClick={() => onToggleSelect?.(item.id)}
+              aria-label={isSelected(item.id) ? `ביטול בחירת ${item.title}` : `בחירת ${item.title}`}
+              aria-pressed={isSelected(item.id)}
+              className={cn(
+                'w-7 h-7 rounded-full border-2 flex items-center justify-center shrink-0 transition cursor-pointer',
+                isSelected(item.id)
+                  ? 'bg-mint-500 border-mint-500 text-white'
+                  : 'border-slate-400/60'
+              )}
+            >
+              {isSelected(item.id) && <Check className="w-4 h-4" />}
+            </button>
+          )}
           {isPhoto && item.dataUrl ? (
             <button
               type="button"
-              onClick={() => onSelectItem(item)}
+              onClick={() => handleSurfaceClick(item, () => onSelectItem(item))}
               className="w-14 h-14 rounded-2xl overflow-hidden bg-vault-200 ring-1 ring-slate-900/10 shrink-0 cursor-pointer"
             >
               <img
@@ -513,7 +567,7 @@ export function VaultItemsView({
           ) : (
             <button
               type="button"
-              onClick={() => onSelectItem(item)}
+              onClick={() => handleSurfaceClick(item, () => onSelectItem(item))}
               className={cn(
                 'w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 cursor-pointer border transition-colors',
                 isRecording
@@ -534,7 +588,7 @@ export function VaultItemsView({
           <div className="min-w-0 flex-1">
             <button
               type="button"
-              onClick={() => onSelectItem(item)}
+              onClick={() => handleSurfaceClick(item, () => onSelectItem(item))}
               className="text-right text-lg font-bold text-slate-900 hover:text-mint-700 truncate block w-full cursor-pointer transition-colors"
             >
               {highlight(item.title)}
@@ -565,7 +619,7 @@ export function VaultItemsView({
             item={item}
             size="md"
             openLabel="פתח"
-            onOpen={() => onSelectItem(item)}
+            onOpen={() => handleSurfaceClick(item, () => onSelectItem(item))}
             onEdit={() => onEditItem(item)}
             onDelete={() => onDeleteItem(item.id)}
           />

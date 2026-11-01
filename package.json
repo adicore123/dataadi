@@ -13,6 +13,7 @@
   "dependencies": {
     "autoprefixer": "^10.6.2",
     "bcryptjs": "^3.0.2",
+    "client-zip": "^2.5.1",
     "clsx": "^2.1.1",
     "jose": "^6.1.0",
     "lucide-react": "^0.553.0",

@@ -18,7 +18,7 @@ import {
 import { FilterTab, Folder, ModuleType } from '@/lib/vault-logic';
 import { UploadMode } from '@/components/upload-share-modal';
 import { cn } from '@/lib/utils';
-import { Trash2 } from 'lucide-react';
+import { Trash2, Download, Moon, Sun } from 'lucide-react';
 
 interface SidebarNavProps {
   activeTab: FilterTab;
@@ -42,6 +42,11 @@ interface SidebarNavProps {
   isMobileDrawerOpen: boolean;
   onOpenMobileDrawer: () => void;
   onCloseMobileDrawer: () => void;
+  /** Downloads the full vault as a ZIP (browser-side). */
+  onExportBackup: () => void;
+  isBackingUp: boolean;
+  isDarkMode: boolean;
+  onToggleTheme: () => void;
 }
 
 export function SidebarNav({
@@ -66,6 +71,10 @@ export function SidebarNav({
   isMobileDrawerOpen,
   onOpenMobileDrawer,
   onCloseMobileDrawer,
+  onExportBackup,
+  isBackingUp,
+  isDarkMode,
+  onToggleTheme,
 }: SidebarNavProps) {
   const navItems: Array<{
     id: FilterTab;
@@ -306,6 +315,31 @@ export function SidebarNav({
             {isInstalled ? 'מותקן בטלפון' : 'שמירת אייקון למסך הבית בנייד'}
           </span>
         </button>
+
+        {/* Full local backup + theme toggle */}
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              if (isMobileDrawer) onCloseMobileDrawer();
+              onExportBackup();
+            }}
+            disabled={isBackingUp}
+            className="flex-1 min-h-11 flex items-center justify-center gap-2 rounded-2xl glass text-xs font-semibold text-slate-700 hover:bg-slate-900/[0.05] transition-colors cursor-pointer disabled:opacity-60"
+          >
+            <Download className="w-4 h-4 text-mint-600" />
+            <span>{isBackingUp ? 'מכין גיבוי…' : 'גיבוי מלא (ZIP)'}</span>
+          </button>
+          <button
+            type="button"
+            onClick={onToggleTheme}
+            aria-label={isDarkMode ? 'מעבר למצב בהיר' : 'מעבר למצב כהה'}
+            title={isDarkMode ? 'מצב בהיר' : 'מצב כהה'}
+            className="w-11 h-11 flex items-center justify-center rounded-2xl glass text-slate-500 hover:text-mint-700 transition-colors cursor-pointer shrink-0"
+          >
+            {isDarkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+          </button>
+        </div>
       </div>
     </div>
   );

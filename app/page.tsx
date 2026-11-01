@@ -9,6 +9,11 @@ import {
   AlertTriangle,
   Undo2,
   X,
+  CheckSquare,
+  FolderInput,
+  Tag as TagIcon,
+  Share2,
+  Trash2,
 } from 'lucide-react';
 import {
   VaultItem,
@@ -43,6 +48,8 @@ import {
 } from '@/lib/vault-storage';
 import { usePWAInstall } from '@/hooks/use-pwa-install';
 import { useIncomingShare, OpenShareDraft } from '@/hooks/use-incoming-share';
+import { exportVaultZip } from '@/lib/backup';
+import { shareVaultItems } from '@/lib/share';
 import { SidebarNav } from '@/components/sidebar-nav';
 import {
   UploadShareModal,
@@ -119,6 +126,11 @@ export default function SmartVaultCRMPage() {
   const [tagFilter, setTagFilter] = useState<string>('all');
   const [viewTrash, setViewTrash] = useState(false);
 
+  // Multi-select bulk actions.
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [bulkTagInput, setBulkTagInput] = useState('');
+
   const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState(false);
 
   // Modals state
@@ -143,7 +155,45 @@ export default function SmartVaultCRMPage() {
   const [syncState, setSyncState] = useState<VaultSyncState | null>(null);
   const syncHandleRef = useRef<VaultSyncHandle | null>(null);
 
+  // Theme (dark mode) + full-backup busy state.
+  const [isDarkMode, setIsDarkMode] = useState(false);
+  const [isBackingUp, setIsBackingUp] = useState(false);
+
   const { isInstallable, isInstalled, install } = usePWAInstall();
+
+  // Apply the persisted/system theme on mount.
+  useEffect(() => {
+    const stored = window.localStorage.getItem('vault-theme');
+    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    const dark = stored ? stored === 'dark' : prefersDark;
+    setIsDarkMode(dark);
+    document.documentElement.classList.toggle('dark', dark);
+  }, []);
+
+  const handleToggleTheme = () => {
+    setIsDarkMode((prev) => {
+      const next = !prev;
+      document.documentElement.classList.toggle('dark', next);
+      try {
+        window.localStorage.setItem('vault-theme', next ? 'dark' : 'light');
+      } catch {
+        // storage unavailable — theme just won't persist
+      }
+      return next;
+    });
+  };
+
+  const handleExportBackup = async () => {
+    if (isBackingUp) return;
+    setIsBackingUp(true);
+    try {
+      await exportVaultZip(items.filter((i) => !i.deletedAt), folders);
+    } catch (error) {
+      console.error('backup failed:', error);
+    } finally {
+      setIsBackingUp(false);
+    }
+  };
 
   const handleOpenUploadModal = useCallback(
     ({
@@ -363,6 +413,95 @@ export default function SmartVaultCRMPage() {
     setViewTrash(false);
     setSelectedFolderId('all');
     setTagFilter('all');
+    setSelectionMode(false);
+    setSelectedIds([]);
+  };
+
+  const handleToggleSelect = (id: string) => {
+    setSelectedIds((current) =>
+      current.includes(id) ? current.filter((x) => x !== id) : [...current, id]
+    );
+  };
+
+  const selectedItems = useMemo(
+    () => items.filter((item) => selectedIds.includes(item.id)),
+    [items, selectedIds]
+  );
+
+  const handleBulkDelete = async () => {
+    for (const id of selectedIds) {
+      await deleteVaultItemFromDatabase(id, items);
+    }
+    const deleted = new Set(selectedIds);
+    setItems((current) =>
+      current.map((item) =>
+        deleted.has(item.id) ? { ...item, deletedAt: new Date().toISOString() } : item
+      )
+    );
+    setSelectedIds([]);
+    setSelectionMode(false);
+  };
+
+  const handleBulkAddTag = async () => {
+    const tag = bulkTagInput.trim();
+    if (!tag) return;
+    for (const item of selectedItems) {
+      await updateVaultItemInDatabase(
+        item.id,
+        {
+          title: item.title,
+          module: item.module,
+          folderId: item.folderId,
+          folderName: item.folderName,
+          tags: [...(item.tags || []), tag],
+          favorite: item.favorite,
+          expiresAt: item.expiresAt,
+          notes: item.notes,
+        },
+        items
+      );
+    }
+    // Re-derive items locally from the last updated snapshot.
+    setItems((current) =>
+      current.map((item) =>
+        selectedIds.includes(item.id)
+          ? { ...item, tags: [...(item.tags || []), tag] }
+          : item
+      )
+    );
+    setBulkTagInput('');
+    setSelectedIds([]);
+    setSelectionMode(false);
+  };
+
+  const handleBulkMoveToFolder = async (folderId: string) => {
+    const folder = folders.find((f) => f.id === folderId);
+    if (!folder) return;
+    for (const item of selectedItems.filter((i) => i.module === folder.module)) {
+      await updateVaultItemInDatabase(
+        item.id,
+        {
+          title: item.title,
+          module: item.module,
+          folderId: folder.id,
+          folderName: folder.name,
+          tags: item.tags,
+          favorite: item.favorite,
+          expiresAt: item.expiresAt,
+          notes: item.notes,
+        },
+        items
+      );
+    }
+    setItems((current) =>
+      current.map((item) =>
+        selectedIds.includes(item.id) && item.module === folder.module
+          ? { ...item, folderId: folder.id, folderName: folder.name }
+          : item
+      )
+    );
+    setSelectedIds([]);
+    setSelectionMode(false);
   };
 
   const defaultModuleForUpload: ModuleType =
@@ -422,6 +561,10 @@ export default function SmartVaultCRMPage() {
         isMobileDrawerOpen={isMobileDrawerOpen}
         onOpenMobileDrawer={() => setIsMobileDrawerOpen(true)}
         onCloseMobileDrawer={() => setIsMobileDrawerOpen(false)}
+        onExportBackup={() => void handleExportBackup()}
+        isBackingUp={isBackingUp}
+        isDarkMode={isDarkMode}
+        onToggleTheme={handleToggleTheme}
       />
 
       {/* Main Workspace over the aurora canvas */}
@@ -575,7 +718,7 @@ export default function SmartVaultCRMPage() {
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="חיפוש קובץ לפי שם, תיקייה, תגית או תאריך..."
-                  className="w-full h-12 pr-12 pl-4 rounded-2xl glass text-base text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-mint-500/60 focus:bg-white transition-colors"
+                  className="w-full h-12 pr-12 pl-4 rounded-2xl glass text-base text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-mint-500/60 focus:bg-white dark:focus:bg-white/10 transition-colors"
                 />
               </div>
 
@@ -620,6 +763,24 @@ export default function SmartVaultCRMPage() {
                     ))}
                   </>
                 )}
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectionMode((v) => !v);
+                    setSelectedIds([]);
+                  }}
+                  aria-pressed={selectionMode}
+                  className={cn(
+                    'min-h-8 px-3 py-1 rounded-lg border text-xs font-bold transition cursor-pointer mr-auto flex items-center gap-1.5',
+                    selectionMode
+                      ? 'chip-selected'
+                      : 'glass text-slate-500 hover:bg-slate-900/5'
+                  )}
+                >
+                  <CheckSquare className="w-3.5 h-3.5" />
+                  {selectionMode ? 'יציאה מבחירה' : 'בחירה מרובה'}
+                </button>
               </div>
             </div>
           )}
@@ -666,11 +827,101 @@ export default function SmartVaultCRMPage() {
                 viewTrash={viewTrash}
                 onRestoreItem={handleRestoreItem}
                 onDeleteForever={handleDeleteForever}
+                selectionMode={selectionMode && !viewTrash}
+                selectedIds={selectedIds}
+                onToggleSelect={handleToggleSelect}
               />
             )}
           </section>
         </main>
       </div>
+
+      {/* Bulk-actions bar (multi-select) */}
+      {selectionMode && (
+        <div className="fixed bottom-24 md:bottom-6 inset-x-0 z-40 flex justify-center px-4 pointer-events-none">
+          <div className="glass-strong rounded-2xl shadow-2xl px-4 py-3 flex flex-wrap items-center gap-2 pointer-events-auto max-w-full">
+            <span className="text-xs font-bold text-slate-700 shrink-0">
+              {selectedIds.length} נבחרו
+            </span>
+
+            {activeTab !== 'all' &&
+              folders.filter((f) => f.module === activeTab).length > 0 && (
+                <label className="sr-only" htmlFor="bulk-folder-select">
+                  העברה לתיקייה
+                </label>
+              )}
+            {activeTab !== 'all' && (
+              <select
+                id="bulk-folder-select"
+                value=""
+                onChange={(e) => e.target.value && void handleBulkMoveToFolder(e.target.value)}
+                className="input-glass min-h-9 py-1 text-xs"
+                disabled={selectedIds.length === 0}
+              >
+                <option value="">העבר לתיקייה…</option>
+                {folders
+                  .filter((f) => f.module === activeTab)
+                  .map((f) => (
+                    <option key={f.id} value={f.id}>
+                      {f.name}
+                    </option>
+                  ))}
+              </select>
+            )}
+
+            <input
+              type="text"
+              value={bulkTagInput}
+              onChange={(e) => setBulkTagInput(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && void handleBulkAddTag()}
+              placeholder="הוסף תגית לכולם…"
+              className="input-glass min-h-9 py-1 w-36 text-xs"
+              disabled={selectedIds.length === 0}
+            />
+            <button
+              type="button"
+              onClick={() => void handleBulkAddTag()}
+              disabled={selectedIds.length === 0 || !bulkTagInput.trim()}
+              className="btn-accent min-h-9 px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer disabled:opacity-50 shrink-0"
+            >
+              <TagIcon className="w-3.5 h-3.5" />
+              תיוג
+            </button>
+
+            <button
+              type="button"
+              onClick={() => void shareVaultItems(selectedItems)}
+              disabled={selectedIds.length === 0}
+              className="min-h-9 px-3 py-1.5 rounded-xl glass text-xs font-bold text-slate-700 hover:bg-slate-900/5 flex items-center gap-1.5 cursor-pointer disabled:opacity-50 shrink-0"
+            >
+              <Share2 className="w-3.5 h-3.5 text-mint-600" />
+              שיתוף
+            </button>
+
+            <button
+              type="button"
+              onClick={() => void handleBulkDelete()}
+              disabled={selectedIds.length === 0}
+              className="min-h-9 px-3 py-1.5 rounded-xl border border-red-500/25 bg-red-500/10 text-xs font-semibold text-red-600 hover:bg-red-500/15 flex items-center gap-1.5 cursor-pointer disabled:opacity-50 shrink-0"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              מחיקה
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setSelectionMode(false);
+                setSelectedIds([]);
+              }}
+              aria-label="סיום בחירה"
+              className="w-9 h-9 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-900/[0.06] transition cursor-pointer shrink-0"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Trash undo toast */}
       {trashToast && (
