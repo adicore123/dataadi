@@ -653,16 +653,20 @@ export async function deleteFolderFromDatabase(
 
 const SYNC_POLL_MS = 30_000;
 
-/** Merges cloud + local-only rows of one kind (cloud wins on conflicts). */
+/** Merges cloud + local-only rows of one kind (cloud wins on conflicts).
+ * Resolves to false when the session was rejected (401) — the caller
+ * uses that to keep the sync indicator honest. */
 async function mergeAndBackfill<T extends { id: string }>(
-  fetchCloud: () => Promise<T[]>,
+  fetchCloud: () => Promise<{ rows: T[]; authed: boolean }>,
   loadLocal: () => Promise<T[]>,
   saveLocal: (rows: T[]) => Promise<void>,
   pushOne: (row: T, current: T[]) => Promise<unknown>,
   onChange: (merged: T[]) => void,
   isStopped: () => boolean
-): Promise<void> {
-  const cloudRows = await fetchCloud();
+): Promise<boolean> {
+  const { rows: cloudRows, authed } = await fetchCloud();
+  if (!authed) return false;
+
   const localRows = await loadLocal();
   const cloudIds = new Set(cloudRows.map((r) => r.id));
 
@@ -679,12 +683,15 @@ async function mergeAndBackfill<T extends { id: string }>(
   const merged = [...cloudRows, ...localRows.filter((r) => !cloudIds.has(r.id))];
   await saveLocal(merged);
   if (!isStopped()) onChange(merged);
+  return true;
 }
 
 /** Live sync state surfaced by the header indicator. */
 export interface VaultSyncState {
   lastSyncedAt: Date | null;
   syncing: boolean;
+  /** True when the session was rejected mid-sync (cookie expired/invalid). */
+  signedOut: boolean;
 }
 
 /** Unsubscribe handle with a manual "sync now" trigger. */
@@ -710,15 +717,18 @@ export function subscribeToUserVault(
   let stopped = false;
   let syncing = false;
   let lastSyncedAt: Date | null = null;
+  let signedOut = false;
 
-  const reportState = () => callbacks.onSyncStateChange?.({ lastSyncedAt, syncing });
+  const reportState = () =>
+    callbacks.onSyncStateChange?.({ lastSyncedAt, syncing, signedOut });
 
   const syncItems = () =>
     mergeAndBackfill(
       async () => {
         const res = await apiFetch('/api/vault-items');
-        if (!res) return []; // signed out mid-session
-        return ((await res.json()) as CloudItemDoc[]).map(mapCloudItem);
+        if (!res) return { rows: [] as VaultItem[], authed: false };
+        const rows = ((await res.json()) as CloudItemDoc[]).map(mapCloudItem);
+        return { rows, authed: true };
       },
       loadLocalVaultItems,
       saveLocalVaultItems,
@@ -731,10 +741,11 @@ export function subscribeToUserVault(
     mergeAndBackfill(
       async () => {
         const res = await apiFetch('/api/folders');
-        if (!res) return [];
-        return ((await res.json()) as CloudFolderDoc[])
+        if (!res) return { rows: [] as Folder[], authed: false };
+        const rows = ((await res.json()) as CloudFolderDoc[])
           .map(mapCloudFolder)
           .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        return { rows, authed: true };
       },
       loadLocalFolders,
       saveLocalFolders,
@@ -748,11 +759,21 @@ export function subscribeToUserVault(
     syncing = true;
     reportState();
     try {
-      await Promise.all([
-        syncItems().catch((err) => console.error('vault items sync failed:', err)),
-        syncFolders().catch((err) => console.error('folders sync failed:', err)),
+      const results = await Promise.all([
+        syncItems().catch((err) => {
+          console.error('vault items sync failed:', err);
+          return false;
+        }),
+        syncFolders().catch((err) => {
+          console.error('folders sync failed:', err);
+          return false;
+        }),
       ]);
-      lastSyncedAt = new Date();
+      // Green only after an authenticated round-trip actually completed.
+      signedOut = results.every((authed) => !authed);
+      if (!signedOut) {
+        lastSyncedAt = new Date();
+      }
     } finally {
       syncing = false;
       reportState();

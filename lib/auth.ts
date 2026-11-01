@@ -1,6 +1,7 @@
 import { cookies } from 'next/headers';
 import { SignJWT, jwtVerify } from 'jose';
 import bcrypt from 'bcryptjs';
+import { createHmac } from 'crypto';
 
 /**
  * Email + password accounts stored in MongoDB (users collection),
@@ -19,14 +20,35 @@ export interface SessionUser {
   email: string;
 }
 
+/**
+ * Session signing key. Resolution order:
+ * 1. AUTH_SECRET / VAULT_AUTH_SECRET env (≥16 chars) when available.
+ * 2. Deterministically derived from MONGODB_URI — the one env var that
+ *    reliably reaches every deployment on this project (new env vars
+ *    added later have failed to propagate). Same cluster → same key →
+ *    sessions survive every redeploy; rotating the Mongo password
+ *    rotates sessions too.
+ */
 function getSecretKey(): Uint8Array {
-  // VAULT_AUTH_SECRET is the primary name; AUTH_SECRET kept as an alias
-  // for older deployments configured with it.
-  const secret = process.env.VAULT_AUTH_SECRET || process.env.AUTH_SECRET;
-  if (!secret || secret.length < 16) {
-    throw new Error('AUTH_SECRET is not set (need at least 16 characters)');
+  const explicit =
+    process.env.AUTH_SECRET && process.env.AUTH_SECRET.length >= 16
+      ? process.env.AUTH_SECRET
+      : process.env.VAULT_AUTH_SECRET && process.env.VAULT_AUTH_SECRET.length >= 16
+      ? process.env.VAULT_AUTH_SECRET
+      : null;
+  if (explicit) {
+    return new TextEncoder().encode(explicit);
   }
-  return new TextEncoder().encode(secret);
+
+  const mongoUri = process.env.MONGODB_URI;
+  if (mongoUri && mongoUri.length >= 16) {
+    const derived = createHmac('sha256', 'dataadi-vault-auth-v1')
+      .update(mongoUri)
+      .digest('base64url');
+    return new TextEncoder().encode(derived);
+  }
+
+  throw new Error('AUTH_SECRET is not set (need at least 16 characters)');
 }
 
 export function normalizeEmail(email: unknown): string {
