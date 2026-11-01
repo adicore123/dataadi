@@ -275,7 +275,7 @@ export function SidebarNav({
           <div className="flex items-center justify-between gap-2 min-h-11 px-3 py-2.5 rounded-2xl glass text-xs">
             <span className="flex items-center gap-2 text-mint-700 font-medium truncate">
               <CheckCircle2 className="w-4 h-4 shrink-0" />
-              <span className="truncate">מחובר לענן ({userEmail})</span>
+              <span className="truncate">הכספת פתוחה · מסונכרנת ל-Mongo</span>
             </span>
             <button
               type="button"
@@ -294,7 +294,7 @@ export function SidebarNav({
             className="w-full min-h-11 flex items-center justify-center gap-2 rounded-2xl glass text-xs font-semibold text-slate-700 hover:bg-slate-900/5 transition-colors cursor-pointer"
           >
             <LogIn className="w-4 h-4 text-mint-600" />
-            <span>התחברות לגיבוי בענן</span>
+            <span>פתיחת הכספת במכשיר זה (פעם אחת)</span>
           </button>
         )}
 

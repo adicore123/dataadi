@@ -519,7 +519,7 @@ export default function SmartVaultCRMPage() {
     : MODULE_META[activeTab].label;
 
   const syncLabel = !userEmail
-    ? 'מקומי בלבד — התחבר לסנכרון'
+    ? 'מקומי בלבד — פתח/י את הכספת כדי לסנכרן'
     : syncState?.syncing
     ? 'מסנכרן…'
     : syncState?.lastSyncedAt

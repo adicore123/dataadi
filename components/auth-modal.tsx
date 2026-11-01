@@ -113,13 +113,17 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
                 <CloudUpload className="w-5 h-5" />
               </span>
               <h2 className="text-xl font-bold text-slate-900">
-                {mode === 'login' ? 'התחברות לגיבוי בענן' : 'יצירת חשבון גיבוי'}
+                {mode === 'login' ? 'פתיחת הכספת שלך' : 'יצירת מפתח לכספת'}
               </h2>
             </div>
-            <p className="text-sm text-slate-500 mb-6">
+            <p className="text-sm text-slate-500 mb-4">
               {mode === 'login'
-                ? 'היכנס/י כדי לסנכרן את הכספת בין המכשירים שלך'
-                : 'חשבון אחד מספיק — כל המכשירים יתחברו אליו'}
+                ? 'זה המפתח הפרטי שלך לכספת — פעם אחת במכשיר וזהו, לא נשאל שוב.'
+                : 'מפתח אחד מספיק — כל המכשירים ישתמשו בו, וכל הקבצים יישמרו במסד שלך.'}
+            </p>
+            <p className="text-xs text-slate-400 mb-6 leading-relaxed">
+              לא שירות ענן חיצוני: הנתונים נשמרים ישירות במסד ה-Mongo שלך. המפתח רק מונע
+              מזרים לפתוח את הכספת שלך מהאינטרנט.
             </p>
 
             {/* Mode tabs */}

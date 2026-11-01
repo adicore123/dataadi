@@ -14,7 +14,9 @@ import { createHmac } from 'crypto';
  */
 
 const SESSION_COOKIE = 'vault_session';
-const SESSION_DAYS = 30;
+// Long-lived session: unlocking the vault is a one-time action per device
+// (the cookie is re-issued with a fresh window on every app open).
+const SESSION_DAYS = 180;
 
 export interface SessionUser {
   email: string;
