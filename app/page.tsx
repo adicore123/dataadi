@@ -1,7 +1,15 @@
 'use client';
 
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { Search, Plus, Menu } from 'lucide-react';
+import {
+  Search,
+  Plus,
+  Menu,
+  RefreshCw,
+  AlertTriangle,
+  Undo2,
+  X,
+} from 'lucide-react';
 import {
   VaultItem,
   Folder,
@@ -9,12 +17,16 @@ import {
   ModuleType,
   VaultItemUpdates,
   MODULE_META,
+  MODULE_IDS,
+  SortMode,
   createVaultItem,
   createFolder,
   CreateVaultItemInput,
   filterAndSortItems,
   computeModuleCounts,
   computeFolderCounts,
+  computeExpiryAlerts,
+  collectTags,
 } from '@/lib/vault-logic';
 import {
   loadLocalVaultItems,
@@ -22,9 +34,12 @@ import {
   saveVaultItemToDatabase,
   updateVaultItemInDatabase,
   deleteVaultItemFromDatabase,
+  restoreVaultItem as restoreVaultItemInDatabase,
   saveFolderToDatabase,
   deleteFolderFromDatabase,
   subscribeToUserVault,
+  VaultSyncState,
+  VaultSyncHandle,
 } from '@/lib/vault-storage';
 import { usePWAInstall } from '@/hooks/use-pwa-install';
 import { useIncomingShare, OpenShareDraft } from '@/hooks/use-incoming-share';
@@ -39,6 +54,7 @@ import { ItemPreviewModal } from '@/components/item-preview-modal';
 import { PwaInstallModal } from '@/components/pwa-install-modal';
 import { AuthModal } from '@/components/auth-modal';
 import { VaultItemsView } from '@/components/vault-items-view';
+import { cn } from '@/lib/utils';
 
 interface UploadModalContext {
   mode: UploadMode;
@@ -56,6 +72,40 @@ interface OpenUploadOptions {
   incomingShareDraft?: SharedDraft | null;
 }
 
+const SORT_LABELS: Record<SortMode, string> = {
+  newest: 'חדש ביותר',
+  oldest: 'ישן ביותר',
+  name: 'שם (א-ת)',
+  size: 'גודל',
+};
+
+/** Fires OS notifications for soon-expiring documents (once per item+day). */
+function notifyExpiries(alerts: ReturnType<typeof computeExpiryAlerts>) {
+  if (typeof window === 'undefined' || !('Notification' in window)) return;
+  if (Notification.permission !== 'granted') return;
+  const today = new Date().toISOString().slice(0, 10);
+  for (const { item, daysLeft } of alerts.filter((a) => a.daysLeft <= 7)) {
+    const key = `expiry_notified_${item.id}`;
+    try {
+      if (window.localStorage.getItem(key) === today) continue;
+      window.localStorage.setItem(key, today);
+    } catch {
+      // storage unavailable — notify anyway
+    }
+    const when =
+      daysLeft < 0
+        ? `פג תוקף לפני ${Math.abs(daysLeft)} ימים!`
+        : daysLeft === 0
+        ? 'פג התוקף היום!'
+        : `פג תוקף בעוד ${daysLeft} ימים`;
+    new Notification(`כספת ניהול — ${item.title}`, {
+      body: when,
+      icon: '/pwa-192x192.png',
+      tag: `expiry-${item.id}`,
+    });
+  }
+}
+
 export default function SmartVaultCRMPage() {
   const [items, setItems] = useState<VaultItem[]>([]);
   const [folders, setFolders] = useState<Folder[]>([]);
@@ -65,6 +115,10 @@ export default function SmartVaultCRMPage() {
 
   const [activeTab, setActiveTab] = useState<FilterTab>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [sortMode, setSortMode] = useState<SortMode>('newest');
+  const [tagFilter, setTagFilter] = useState<string>('all');
+  const [viewTrash, setViewTrash] = useState(false);
+
   const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState(false);
 
   // Modals state
@@ -80,6 +134,14 @@ export default function SmartVaultCRMPage() {
   const [pwaModalOpen, setPwaModalOpen] = useState(false);
   const [shareNotice, setShareNotice] = useState<string | null>(null);
   const [authModalOpen, setAuthModalOpen] = useState(false);
+
+  // "Moved to trash" toast with undo (restore).
+  const [trashToast, setTrashToast] = useState<{ id: string; title: string } | null>(null);
+  const trashToastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Cloud sync state for the header indicator.
+  const [syncState, setSyncState] = useState<VaultSyncState | null>(null);
+  const syncHandleRef = useRef<VaultSyncHandle | null>(null);
 
   const { isInstallable, isInstalled, install } = usePWAInstall();
 
@@ -120,18 +182,16 @@ export default function SmartVaultCRMPage() {
   );
   useIncomingShare(openShareDraft);
 
-  // Cloud vault sync handle (poll + focus refresh).
-  const unsubscribeVaultRef = useRef<(() => void) | null>(null);
-
   const stopVaultSync = useCallback(() => {
-    unsubscribeVaultRef.current?.();
-    unsubscribeVaultRef.current = null;
+    syncHandleRef.current?.();
+    syncHandleRef.current = null;
+    setSyncState(null);
   }, []);
 
   const startVaultSync = useCallback(
     (email: string) => {
       stopVaultSync();
-      unsubscribeVaultRef.current = subscribeToUserVault(email, {
+      syncHandleRef.current = subscribeToUserVault(email, {
         onItemsChange: (cloudItems) => {
           setItems(cloudItems);
           setIsLoaded(true);
@@ -139,6 +199,7 @@ export default function SmartVaultCRMPage() {
         onFoldersChange: (cloudFolders) => {
           setFolders(cloudFolders);
         },
+        onSyncStateChange: (state) => setSyncState(state),
       });
     },
     [stopVaultSync]
@@ -181,16 +242,39 @@ export default function SmartVaultCRMPage() {
 
   const counts = useMemo(() => computeModuleCounts(items), [items]);
   const folderCounts = useMemo(() => computeFolderCounts(items), [items]);
+  const trashCount = useMemo(
+    () => items.filter((item) => item.deletedAt).length,
+    [items]
+  );
+  const expiryAlerts = useMemo(() => computeExpiryAlerts(items), [items]);
+  const tagOptions = useMemo(() => collectTags(items).slice(0, 12), [items]);
+
+  // OS notifications for urgent expiries (once a day per item).
+  useEffect(() => {
+    if (expiryAlerts.length > 0) notifyExpiries(expiryAlerts);
+  }, [expiryAlerts]);
+
+  // Dismiss the trash toast automatically.
+  useEffect(() => {
+    if (!trashToast) return;
+    if (trashToastTimer.current) clearTimeout(trashToastTimer.current);
+    trashToastTimer.current = setTimeout(() => setTrashToast(null), 6000);
+    return () => {
+      if (trashToastTimer.current) clearTimeout(trashToastTimer.current);
+    };
+  }, [trashToast]);
 
   const filteredItems = useMemo(
     () =>
       filterAndSortItems(items, {
-        moduleFilter: activeTab,
-        folderFilter: activeTab === 'all' ? 'all' : selectedFolderId,
+        moduleFilter: viewTrash ? 'all' : activeTab,
+        folderFilter: activeTab === 'all' || viewTrash ? 'all' : selectedFolderId,
+        tagFilter,
         searchQuery,
-        sortOrder: 'newest',
+        sortOrder: sortMode,
+        deleted: viewTrash ? 'only' : 'exclude',
       }),
-    [items, activeTab, selectedFolderId, searchQuery]
+    [items, activeTab, selectedFolderId, tagFilter, searchQuery, sortMode, viewTrash]
   );
 
   const handleAuthSuccess = (email: string) => {
@@ -237,9 +321,48 @@ export default function SmartVaultCRMPage() {
     setSelectedItem(refreshedSelected);
   };
 
+  const handleToggleFavorite = (item: VaultItem) => {
+    void handleUpdateItem(item.id, {
+      title: item.title,
+      module: item.module,
+      folderId: item.folderId,
+      folderName: item.folderName,
+      tags: item.tags,
+      favorite: !item.favorite,
+      expiresAt: item.expiresAt,
+      notes: item.notes,
+    });
+    if (selectedItem?.id === item.id) {
+      setSelectedItem({ ...selectedItem, favorite: !item.favorite });
+    }
+  };
+
   const handleDeleteItem = async (id: string) => {
+    const target = items.find((i) => i.id === id);
     const updated = await deleteVaultItemFromDatabase(id, items);
     setItems(updated);
+    setSelectedItem((current) => (current?.id === id ? null : current));
+    if (target && !target.deletedAt) {
+      setTrashToast({ id, title: target.title });
+    }
+  };
+
+  const handleRestoreItem = async (id: string) => {
+    const updated = await restoreVaultItemInDatabase(id, items);
+    setItems(updated);
+    setTrashToast(null);
+  };
+
+  const handleDeleteForever = async (id: string) => {
+    const updated = await deleteVaultItemFromDatabase(id, items, { permanent: true });
+    setItems(updated);
+  };
+
+  const handleSelectTab = (tab: FilterTab) => {
+    setActiveTab(tab);
+    setViewTrash(false);
+    setSelectedFolderId('all');
+    setTagFilter('all');
   };
 
   const defaultModuleForUpload: ModuleType =
@@ -250,20 +373,37 @@ export default function SmartVaultCRMPage() {
   const currentFolderId =
     activeTab !== 'all' && selectedFolderId !== 'all' ? selectedFolderId : undefined;
 
-  const activeModuleTitle =
-    activeTab === 'all' ? 'כל הקבצים' : MODULE_META[activeTab].label;
+  const activeModuleTitle = viewTrash
+    ? 'סל מיחזור'
+    : activeTab === 'all'
+    ? 'כל הקבצים'
+    : MODULE_META[activeTab].label;
+
+  const syncLabel = !userEmail
+    ? 'מקומי בלבד — התחבר לסנכרון'
+    : syncState?.syncing
+    ? 'מסנכרן…'
+    : syncState?.lastSyncedAt
+    ? `מסונכרן ✓ ${syncState.lastSyncedAt.toLocaleTimeString('he-IL', {
+        hour: '2-digit',
+        minute: '2-digit',
+      })}`
+    : 'מתחבר לענן…';
 
   return (
     <div className="min-h-screen flex text-slate-800 pb-28 md:pb-0">
       {/* Right-Hand Glass Sidebar */}
       <SidebarNav
         activeTab={activeTab}
-        onSelectTab={setActiveTab}
+        onSelectTab={handleSelectTab}
         counts={counts}
         folders={folders}
         selectedFolderId={selectedFolderId}
         folderCounts={folderCounts}
         onSelectFolder={setSelectedFolderId}
+        trashCount={trashCount}
+        viewTrash={viewTrash}
+        onOpenTrash={() => setViewTrash(true)}
         userEmail={userEmail}
         onSignIn={() => setAuthModalOpen(true)}
         onSignOut={handleSignOut}
@@ -286,7 +426,7 @@ export default function SmartVaultCRMPage() {
 
       {/* Main Workspace over the aurora canvas */}
       <div className="flex-1 flex flex-col min-w-0 w-full">
-        {/* Glass Sticky Header: Title, Search shortcut, Upload */}
+        {/* Glass Sticky Header: Title, Sync, Upload */}
         <header className="sticky top-0 z-20 glass-strong border-x-0 border-t-0 px-4 sm:px-8 py-3.5">
           <div className="max-w-4xl mx-auto flex items-center justify-between gap-3">
             <div className="flex items-center gap-3 min-w-0">
@@ -302,43 +442,185 @@ export default function SmartVaultCRMPage() {
               <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900 truncate">
                 {activeModuleTitle}
               </h1>
+
+              {/* Sync indicator + manual sync */}
+              <span
+                title={syncLabel}
+                className="hidden sm:inline-flex items-center gap-1.5 text-[11px] font-semibold text-slate-500 min-w-0"
+              >
+                <span
+                  aria-hidden="true"
+                  className={cn(
+                    'w-2 h-2 rounded-full shrink-0',
+                    !userEmail
+                      ? 'bg-slate-300'
+                      : syncState?.syncing
+                      ? 'bg-amber-400 animate-pulse'
+                      : syncState?.lastSyncedAt
+                      ? 'bg-mint-500'
+                      : 'bg-slate-300 animate-pulse'
+                  )}
+                />
+                <span className="truncate">{syncLabel}</span>
+                {userEmail && (
+                  <button
+                    type="button"
+                    onClick={() => syncHandleRef.current?.syncNow()}
+                    aria-label="סנכרון עכשיו"
+                    title="סנכרון עכשיו"
+                    className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-slate-900/[0.06] text-slate-400 hover:text-mint-700 transition cursor-pointer shrink-0"
+                  >
+                    <RefreshCw className={cn('w-3.5 h-3.5', syncState?.syncing && 'animate-spin')} />
+                  </button>
+                )}
+              </span>
             </div>
 
-            <button
-              type="button"
-              onClick={() =>
-                handleOpenUploadModal({
-                  mode: 'upload',
-                  destinationMode: destinationModeForCurrentView,
-                  targetModule: defaultModuleForUpload,
-                  targetFolderId: currentFolderId,
-                })
-              }
-              className="btn-accent h-11 px-4 sm:px-5 rounded-2xl text-sm sm:text-base font-bold flex items-center gap-2 cursor-pointer shrink-0"
-            >
-              <Plus className="w-5 h-5 stroke-[2.5]" />
-              <span className="hidden sm:inline">העלאת קובץ</span>
-              <span className="sm:hidden">העלאה</span>
-            </button>
+            <div className="flex items-center gap-2 shrink-0">
+              {/* Compact mobile sync dot */}
+              <span
+                title={syncLabel}
+                aria-hidden="true"
+                className={cn(
+                  'sm:hidden w-2.5 h-2.5 rounded-full',
+                  !userEmail
+                    ? 'bg-slate-300'
+                    : syncState?.syncing
+                    ? 'bg-amber-400 animate-pulse'
+                    : syncState?.lastSyncedAt
+                    ? 'bg-mint-500'
+                    : 'bg-slate-300 animate-pulse'
+                )}
+              />
+
+              <button
+                type="button"
+                onClick={() =>
+                  handleOpenUploadModal({
+                    mode: 'upload',
+                    destinationMode: destinationModeForCurrentView,
+                    targetModule: defaultModuleForUpload,
+                    targetFolderId: currentFolderId,
+                  })
+                }
+                className="btn-accent h-11 px-4 sm:px-5 rounded-2xl text-sm sm:text-base font-bold flex items-center gap-2 cursor-pointer shrink-0"
+              >
+                <Plus className="w-5 h-5 stroke-[2.5]" />
+                <span className="hidden sm:inline">העלאת קובץ</span>
+                <span className="sm:hidden">העלאה</span>
+              </button>
+            </div>
           </div>
         </header>
 
-        {/* Main Content: Search (if items exist) and the Files List */}
+        {/* Main Content */}
         <main className="flex-1 max-w-4xl w-full mx-auto px-4 sm:px-8 py-6 space-y-6">
-          {(items.length > 0 || searchQuery) && (
-            <div className="relative">
-              <Search className="w-5 h-5 text-slate-400 absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none" />
-              <label htmlFor="simple-search" className="sr-only">
-                חיפוש קובץ
-              </label>
-              <input
-                id="simple-search"
-                type="search"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="חיפוש קובץ לפי שם, אלבום, תגית או תאריך..."
-                className="w-full h-12 pr-12 pl-4 rounded-2xl glass text-base text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-mint-500/60 focus:bg-white transition-colors"
-              />
+          {/* Expiry banner — documents about to expire */}
+          {!viewTrash && expiryAlerts.length > 0 && (
+            <div className="glass card-sheen rounded-3xl p-4 space-y-2" role="alert">
+              <div className="flex items-center gap-2 text-sm font-bold text-slate-800">
+                <AlertTriangle className="w-4 h-4 text-amber-500" />
+                מסמכים שפג התוקף שלהם (או עומדים לפוג):
+              </div>
+              <div className="flex flex-col gap-1.5">
+                {expiryAlerts.slice(0, 3).map(({ item, daysLeft, level }) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => setSelectedItem(item)}
+                    className={cn(
+                      'flex items-center justify-between gap-3 rounded-xl px-3 py-2 text-xs font-semibold transition cursor-pointer border',
+                      level === 'expired'
+                        ? 'bg-red-500/10 border-red-500/30 text-red-700'
+                        : level === 'week'
+                        ? 'bg-amber-400/15 border-amber-500/35 text-amber-700'
+                        : 'bg-slate-900/[0.04] border-slate-900/[0.08] text-slate-600'
+                    )}
+                  >
+                    <span className="truncate">{item.title}</span>
+                    <span dir="rtl" className="shrink-0 font-bold">
+                      {daysLeft < 0
+                        ? `פג לפני ${Math.abs(daysLeft)} ימים`
+                        : daysLeft === 0
+                        ? 'פג היום!'
+                        : `בעוד ${daysLeft} ימים`}
+                    </span>
+                  </button>
+                ))}
+              </div>
+              {typeof window !== 'undefined' &&
+                'Notification' in window &&
+                Notification.permission === 'default' && (
+                  <button
+                    type="button"
+                    onClick={() => void Notification.requestPermission()}
+                    className="text-xs font-bold text-mint-700 hover:underline cursor-pointer"
+                  >
+                    הפעלת התראות טלפון לתוקף שמתקרב →
+                  </button>
+                )}
+            </div>
+          )}
+
+          {!viewTrash && (items.length > 0 || searchQuery) && (
+            <div className="space-y-3">
+              <div className="relative">
+                <Search className="w-5 h-5 text-slate-400 absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <label htmlFor="simple-search" className="sr-only">
+                  חיפוש קובץ
+                </label>
+                <input
+                  id="simple-search"
+                  type="search"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="חיפוש קובץ לפי שם, תיקייה, תגית או תאריך..."
+                  className="w-full h-12 pr-12 pl-4 rounded-2xl glass text-base text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-mint-500/60 focus:bg-white transition-colors"
+                />
+              </div>
+
+              {/* Sort + tag filters */}
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-[11px] font-bold text-slate-400">מיון:</span>
+                {(Object.keys(SORT_LABELS) as SortMode[]).map((mode) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => setSortMode(mode)}
+                    aria-pressed={sortMode === mode}
+                    className={cn(
+                      'min-h-8 px-3 py-1 rounded-lg border text-xs font-bold transition cursor-pointer',
+                      sortMode === mode
+                        ? 'chip-selected'
+                        : 'glass text-slate-500 hover:bg-slate-900/5'
+                    )}
+                  >
+                    {SORT_LABELS[mode]}
+                  </button>
+                ))}
+
+                {tagOptions.length > 0 && (
+                  <>
+                    <span className="text-[11px] font-bold text-slate-400 mr-2">תגיות:</span>
+                    {tagOptions.map(({ tag, count }) => (
+                      <button
+                        key={tag}
+                        type="button"
+                        onClick={() => setTagFilter(tagFilter === tag ? 'all' : tag)}
+                        aria-pressed={tagFilter === tag}
+                        className={cn(
+                          'min-h-8 px-3 py-1 rounded-lg border text-xs font-bold transition cursor-pointer',
+                          tagFilter === tag
+                            ? 'chip-selected'
+                            : 'glass text-slate-500 hover:bg-slate-900/5'
+                        )}
+                      >
+                        {tag} <span className="opacity-60 font-mono">({count})</span>
+                      </button>
+                    ))}
+                  </>
+                )}
+              </div>
             </div>
           )}
 
@@ -370,6 +652,7 @@ export default function SmartVaultCRMPage() {
                   setSelectedItem(item);
                   setPreviewStartInEdit(true);
                 }}
+                onToggleFavorite={handleToggleFavorite}
                 onDeleteItem={handleDeleteItem}
                 onOpenUpload={(mode, targetFolderId) =>
                   handleOpenUploadModal({
@@ -380,11 +663,41 @@ export default function SmartVaultCRMPage() {
                     targetFolderId: targetFolderId || currentFolderId,
                   })
                 }
+                viewTrash={viewTrash}
+                onRestoreItem={handleRestoreItem}
+                onDeleteForever={handleDeleteForever}
               />
             )}
           </section>
         </main>
       </div>
+
+      {/* Trash undo toast */}
+      {trashToast && (
+        <div className="fixed bottom-24 md:bottom-6 inset-x-0 z-50 flex justify-center px-4 pointer-events-none">
+          <div className="glass-strong rounded-2xl shadow-2xl px-4 py-3 flex items-center gap-3 pointer-events-auto max-w-full">
+            <span className="text-sm text-slate-700 truncate">
+              <strong className="font-bold">{trashToast.title}</strong> הועבר לסל המיחזור
+            </span>
+            <button
+              type="button"
+              onClick={() => void handleRestoreItem(trashToast.id)}
+              className="btn-accent min-h-9 px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer shrink-0"
+            >
+              <Undo2 className="w-3.5 h-3.5" />
+              שחזור
+            </button>
+            <button
+              type="button"
+              onClick={() => setTrashToast(null)}
+              aria-label="סגירת ההודעה"
+              className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-900/[0.06] transition cursor-pointer shrink-0"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Simple 3-Step Upload Modal */}
       <UploadShareModal
@@ -419,6 +732,7 @@ export default function SmartVaultCRMPage() {
         }}
         onCreateFolder={handleCreateFolder}
         onUpdateItem={handleUpdateItem}
+        onToggleFavorite={handleToggleFavorite}
         onDeleteItem={handleDeleteItem}
       />
 

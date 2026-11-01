@@ -10,6 +10,9 @@ import {
   FolderPlus,
   Trash2,
   Tag,
+  Star,
+  RotateCcw,
+  Search as SearchIcon,
 } from 'lucide-react';
 import {
   VaultItem,
@@ -17,6 +20,7 @@ import {
   FilterTab,
   ModuleType,
   MODULE_META,
+  MODULE_IDS,
 } from '@/lib/vault-logic';
 import { UploadMode } from '@/components/upload-share-modal';
 import { ItemActions } from '@/components/ui/item-actions';
@@ -35,9 +39,16 @@ interface VaultItemsViewProps {
   onDeleteFolder: (folderId: string) => void;
   onSelectItem: (item: VaultItem) => void;
   onEditItem: (item: VaultItem) => void;
+  onToggleFavorite: (item: VaultItem) => void;
   onDeleteItem: (id: string) => void;
   onOpenUpload: (mode?: UploadMode, targetFolderId?: string) => void;
+  /** Recycle-bin mode — restore / delete-forever instead of the usual actions. */
+  viewTrash?: boolean;
+  onRestoreItem?: (id: string) => void;
+  onDeleteForever?: (id: string) => void;
 }
+
+const ALL_MODULES: ModuleType[] = [...MODULE_IDS];
 
 export function VaultItemsView({
   items,
@@ -52,8 +63,12 @@ export function VaultItemsView({
   onDeleteFolder,
   onSelectItem,
   onEditItem,
+  onToggleFavorite,
   onDeleteItem,
   onOpenUpload,
+  viewTrash = false,
+  onRestoreItem,
+  onDeleteForever,
 }: VaultItemsViewProps) {
   const [showNewFolderForm, setShowNewFolderForm] = useState(false);
   const [newFolderInput, setNewFolderInput] = useState('');
@@ -73,9 +88,82 @@ export function VaultItemsView({
     onSelectFolder(created.id);
   };
 
+  /** Folder + tags chips shown on every item row/card. */
+  const itemChips = (item: VaultItem, variant: 'scrim' | 'meta') => {
+    if (variant === 'scrim') {
+      return (
+        <div className="flex items-center gap-2 text-[11px] text-slate-200 mt-1 flex-wrap">
+          {item.favorite && (
+            <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400 shrink-0" />
+          )}
+          {item.folderName && (
+            <span className="inline-flex items-center gap-1 rounded-md bg-white/15 border border-white/20 px-1.5 py-0.5 font-semibold text-mint-200 truncate max-w-[10rem]">
+              <FolderIcon className="w-3 h-3 shrink-0" />
+              <span className="truncate">{item.folderName}</span>
+            </span>
+          )}
+          {(item.tags?.length || 0) > 0 &&
+            item.tags!.slice(0, 3).map((tag) => (
+              <span
+                key={tag}
+                className="inline-flex items-center gap-1 rounded-md bg-white/10 border border-white/15 px-1.5 py-0.5 font-semibold text-slate-100 truncate max-w-[7rem]"
+              >
+                <Tag className="w-3 h-3 shrink-0" />
+                <span className="truncate">{tag}</span>
+              </span>
+            ))}
+          <span dir="ltr" className="font-mono tabular-nums">
+            {item.formattedDate}
+          </span>
+        </div>
+      );
+    }
+
+    return (
+      <>
+        {item.favorite && (
+          <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400 shrink-0" />
+        )}
+        {item.folderName && (
+          <span className="font-bold text-mint-700 inline-flex items-center gap-1">
+            <FolderIcon className="w-3 h-3" />
+            {item.folderName}
+          </span>
+        )}
+        {(item.tags?.length || 0) > 0 &&
+          item.tags!.map((tag) => (
+            <span
+              key={tag}
+              className="inline-flex items-center gap-1 rounded-md bg-teal-500/10 border border-teal-500/25 px-1.5 py-0.5 font-semibold text-teal-700"
+            >
+              <Tag className="w-3 h-3" />
+              {tag}
+            </span>
+          ))}
+      </>
+    );
+  };
+
+  /** Highlights the search phrase inside a text snippet. */
+  const highlight = (text: string) => {
+    const q = searchQuery.trim();
+    if (!q) return text;
+    const idx = text.toLowerCase().indexOf(q.toLowerCase());
+    if (idx === -1) return text;
+    return (
+      <>
+        {text.slice(0, idx)}
+        <mark className="bg-mint-300/50 text-slate-900 rounded px-0.5">
+          {text.slice(idx, idx + q.length)}
+        </mark>
+        {text.slice(idx + q.length)}
+      </>
+    );
+  };
+
   /** Folder bar — inside each module (documents / photos / recordings). */
   const renderFoldersSection = () => {
-    if (!activeModule) return null;
+    if (!activeModule || viewTrash) return null;
 
     return (
       <div className="glass card-sheen rounded-3xl p-5 space-y-4">
@@ -193,55 +281,83 @@ export function VaultItemsView({
     );
   };
 
-  /** Folder + tags chips shown on every item row/card. */
-  const itemChips = (item: VaultItem, variant: 'scrim' | 'meta') => {
-    if (variant === 'scrim') {
-      return (
-        <div className="flex items-center gap-2 text-[11px] text-slate-200 mt-1 flex-wrap">
-          {item.folderName && (
-            <span className="inline-flex items-center gap-1 rounded-md bg-white/15 border border-white/20 px-1.5 py-0.5 font-semibold text-mint-200 truncate max-w-[10rem]">
-              <FolderIcon className="w-3 h-3 shrink-0" />
-              <span className="truncate">{item.folderName}</span>
-            </span>
-          )}
-          {(item.tags?.length || 0) > 0 &&
-            item.tags!.slice(0, 3).map((tag) => (
-              <span
-                key={tag}
-                className="inline-flex items-center gap-1 rounded-md bg-white/10 border border-white/15 px-1.5 py-0.5 font-semibold text-slate-100 truncate max-w-[7rem]"
-              >
-                <Tag className="w-3 h-3 shrink-0" />
-                <span className="truncate">{tag}</span>
-              </span>
-            ))}
-          <span dir="ltr" className="font-mono tabular-nums">
-            {item.formattedDate}
-          </span>
-        </div>
-      );
-    }
+  /* ------------------------- Recycle bin ------------------------- */
 
+  if (viewTrash) {
     return (
-      <>
-        {item.folderName && (
-          <span className="font-bold text-mint-700 inline-flex items-center gap-1">
-            <FolderIcon className="w-3 h-3" />
-            {item.folderName}
+      <div className="space-y-4">
+        <div className="glass card-sheen rounded-3xl p-5 flex items-center gap-3">
+          <span className="flex items-center justify-center w-10 h-10 rounded-xl bg-slate-900/[0.05] text-slate-500">
+            <Trash2 className="w-5 h-5" />
           </span>
+          <div>
+            <h2 className="text-base font-bold text-slate-900">סל מיחזור</h2>
+            <p className="text-xs text-slate-500">
+              פריטים שנמחקו נשמרים כאן למשך 30 יום ואז נמחקים אוטומטית.
+            </p>
+          </div>
+        </div>
+
+        {items.length === 0 ? (
+          <div className="glass rounded-3xl p-10 text-center text-sm text-slate-500">
+            סל המיחזור ריק — שום דבר לא נמחק לאחרונה 🎉
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {items.map((item) => {
+              const Icon =
+                item.module === 'photos'
+                  ? ImageIcon
+                  : item.module === 'recordings'
+                  ? Mic
+                  : FileText;
+              return (
+                <article
+                  key={item.id}
+                  className="glass card-sheen rounded-3xl p-4 flex items-center justify-between gap-3 opacity-90"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <span className="flex items-center justify-center w-11 h-11 rounded-2xl bg-slate-900/[0.04] text-slate-400 shrink-0">
+                      <Icon className="w-5 h-5" />
+                    </span>
+                    <div className="min-w-0">
+                      <p className="text-sm font-bold text-slate-700 truncate">
+                        {item.title}
+                      </p>
+                      <p className="text-[11px] text-slate-400 font-mono tabular-nums">
+                        {MODULE_META[item.module].singularLabel} · נמחק{' '}
+                        {item.deletedAt ? item.deletedAt.slice(0, 10) : ''}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => onRestoreItem?.(item.id)}
+                      className="min-h-10 px-3.5 py-2 rounded-xl bg-mint-500/10 border border-mint-500/30 text-xs font-bold text-mint-700 hover:bg-mint-500/20 active:scale-95 transition flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      שחזור
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onDeleteForever?.(item.id)}
+                      className="min-h-10 px-3.5 py-2 rounded-xl border border-red-500/25 bg-red-500/10 text-xs font-semibold text-red-600 hover:bg-red-500/15 active:scale-95 transition flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      מחיקה לצמיתות
+                    </button>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
         )}
-        {(item.tags?.length || 0) > 0 &&
-          item.tags!.map((tag) => (
-            <span
-              key={tag}
-              className="inline-flex items-center gap-1 rounded-md bg-teal-500/10 border border-teal-500/25 px-1.5 py-0.5 font-semibold text-teal-700"
-            >
-              <Tag className="w-3 h-3" />
-              {tag}
-            </span>
-          ))}
-      </>
+      </div>
     );
-  };
+  }
+
+  /* ------------------------- Empty state ------------------------- */
 
   if (items.length === 0) {
     const selectedFolderObj = folders.find((f) => f.id === selectedFolderId);
@@ -266,11 +382,16 @@ export function VaultItemsView({
               )}
             </div>
             <h3 className="text-xl font-bold text-slate-900 tracking-tight">
-              {searchQuery
-                ? `לא נמצאו תוצאות עבור "${searchQuery}"`
-                : selectedFolderObj
-                ? `התיקייה "${selectedFolderObj.name}" ריקה`
-                : 'אין עדיין קבצים כאן'}
+              {searchQuery ? (
+                <>
+                  <SearchIcon className="inline w-5 h-5 mx-1 text-slate-400" />
+                  לא נמצאו תוצאות עבור &quot;{searchQuery}&quot;
+                </>
+              ) : selectedFolderObj ? (
+                `התיקייה "${selectedFolderObj.name}" ריקה`
+              ) : (
+                'אין עדיין קבצים כאן'
+              )}
             </h3>
             <p className="text-sm text-slate-500 mt-2 leading-relaxed">
               לחץ על הכפתור למטה כדי להעלות מסמך, תמונה או הקלטה.
@@ -294,7 +415,8 @@ export function VaultItemsView({
     );
   }
 
-  // Photo Grid inside the Photos module
+  /* ------------------------- Photo grid ------------------------- */
+
   if (activeTab === 'photos') {
     return (
       <div>
@@ -325,7 +447,7 @@ export function VaultItemsView({
                 {/* Gradient scrim with the title on top of the photo */}
                 <div className="absolute inset-x-0 bottom-0 pt-14 pb-3.5 px-4 bg-gradient-to-t from-slate-950/85 via-slate-950/45 to-transparent text-right">
                   <h3 className="text-[15px] font-bold text-white truncate">
-                    {item.title}
+                    {highlight(item.title)}
                   </h3>
                   {itemChips(item, 'scrim')}
                 </div>
@@ -340,6 +462,21 @@ export function VaultItemsView({
                   onEdit={() => onEditItem(item)}
                   onDelete={() => onDeleteItem(item.id)}
                 />
+                <button
+                  type="button"
+                  onClick={() => onToggleFavorite(item)}
+                  aria-label={item.favorite ? `הסרת ${item.title} מהמועדפים` : `הוספת ${item.title} למועדפים`}
+                  className="w-10 h-10 flex items-center justify-center rounded-xl glass transition cursor-pointer shrink-0"
+                >
+                  <Star
+                    className={cn(
+                      'w-4 h-4 transition',
+                      item.favorite
+                        ? 'fill-amber-400 text-amber-400'
+                        : 'text-slate-400 hover:text-amber-500'
+                    )}
+                  />
+                </button>
               </div>
             </article>
           ))}
@@ -348,98 +485,135 @@ export function VaultItemsView({
     );
   }
 
-  // Documents / Recordings — large readable rows
-  return (
-    <div className="space-y-4">
-      {renderFoldersSection()}
-      <div className="space-y-3">
-        {items.map((item) => {
-        const isPhoto = item.module === 'photos';
-        const isRecording = item.module === 'recordings';
+  /* ------------- Documents / Recordings rows (+ grouped search) ------------- */
 
-        return (
-          <article
-            key={item.id}
-            className="glass card-sheen rounded-3xl hover:border-mint-500/30 hover:-translate-y-0.5 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4 group"
-          >
-            <div className="flex items-center gap-4 min-w-0 flex-1 p-4 sm:p-5 sm:pb-5">
-              {isPhoto && item.dataUrl ? (
-                <button
-                  type="button"
-                  onClick={() => onSelectItem(item)}
-                  className="w-14 h-14 rounded-2xl overflow-hidden bg-vault-200 ring-1 ring-slate-900/10 shrink-0 cursor-pointer"
-                >
-                  <img
-                    src={item.dataUrl}
-                    alt={item.title}
-                    referrerPolicy="no-referrer"
-                    className="w-full h-full object-cover"
-                  />
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => onSelectItem(item)}
-                  className={cn(
-                    'w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 cursor-pointer border transition-colors',
-                    isRecording
-                      ? 'bg-gradient-to-br from-mint-500/20 to-teal-500/10 border-mint-500/25 text-mint-600'
-                      : 'bg-slate-900/[0.04] border-slate-900/[0.08] text-slate-500'
-                  )}
-                >
-                  {isRecording ? (
-                    <Mic className="w-6 h-6" />
-                  ) : isPhoto ? (
-                    <ImageIcon className="w-6 h-6" />
-                  ) : (
-                    <FileText className="w-6 h-6" />
-                  )}
-                </button>
-              )}
+  const renderRow = (item: VaultItem) => {
+    const isPhoto = item.module === 'photos';
+    const isRecording = item.module === 'recordings';
 
-              <div className="min-w-0 flex-1">
-                <button
-                  type="button"
-                  onClick={() => onSelectItem(item)}
-                  className="text-right text-lg font-bold text-slate-900 hover:text-mint-700 truncate block w-full cursor-pointer transition-colors"
-                >
-                  {item.title}
-                </button>
-
-                <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 mt-1">
-                  <span className="font-semibold text-slate-600">
-                    {MODULE_META[item.module].singularLabel}
-                  </span>
-                  <span aria-hidden="true">·</span>
-                  {itemChips(item, 'meta')}
-                  <span aria-hidden="true">·</span>
-                  <span dir="ltr" className="font-mono text-slate-400 tabular-nums">
-                    {item.formattedDate} · {item.formattedTime}
-                  </span>
-                </div>
-
-                {isRecording && item.dataUrl && (
-                  <div className="mt-3 max-w-md">
-                    <audio controls src={item.dataUrl} className="w-full h-9" />
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <div className="flex items-center justify-end gap-2 shrink-0 px-4 sm:pl-5 pb-4 sm:pb-5">
-              <ItemActions
-                item={item}
-                size="md"
-                openLabel="פתח"
-                onOpen={() => onSelectItem(item)}
-                onEdit={() => onEditItem(item)}
-                onDelete={() => onDeleteItem(item.id)}
+    return (
+      <article
+        key={item.id}
+        className="glass card-sheen rounded-3xl hover:border-mint-500/30 hover:-translate-y-0.5 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4 group"
+      >
+        <div className="flex items-center gap-4 min-w-0 flex-1 p-4 sm:p-5 sm:pb-5">
+          {isPhoto && item.dataUrl ? (
+            <button
+              type="button"
+              onClick={() => onSelectItem(item)}
+              className="w-14 h-14 rounded-2xl overflow-hidden bg-vault-200 ring-1 ring-slate-900/10 shrink-0 cursor-pointer"
+            >
+              <img
+                src={item.dataUrl}
+                alt={item.title}
+                referrerPolicy="no-referrer"
+                className="w-full h-full object-cover"
               />
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => onSelectItem(item)}
+              className={cn(
+                'w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 cursor-pointer border transition-colors',
+                isRecording
+                  ? 'bg-gradient-to-br from-mint-500/20 to-teal-500/10 border-mint-500/25 text-mint-600'
+                  : 'bg-slate-900/[0.04] border-slate-900/[0.08] text-slate-500'
+              )}
+            >
+              {isRecording ? (
+                <Mic className="w-6 h-6" />
+              ) : isPhoto ? (
+                <ImageIcon className="w-6 h-6" />
+              ) : (
+                <FileText className="w-6 h-6" />
+              )}
+            </button>
+          )}
+
+          <div className="min-w-0 flex-1">
+            <button
+              type="button"
+              onClick={() => onSelectItem(item)}
+              className="text-right text-lg font-bold text-slate-900 hover:text-mint-700 truncate block w-full cursor-pointer transition-colors"
+            >
+              {highlight(item.title)}
+            </button>
+
+            <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 mt-1">
+              <span className="font-semibold text-slate-600">
+                {MODULE_META[item.module].singularLabel}
+              </span>
+              <span aria-hidden="true">·</span>
+              {itemChips(item, 'meta')}
+              <span aria-hidden="true">·</span>
+              <span dir="ltr" className="font-mono text-slate-400 tabular-nums">
+                {item.formattedDate} · {item.formattedTime}
+              </span>
             </div>
-          </article>
-          );
-        })}
+
+            {isRecording && item.dataUrl && (
+              <div className="mt-3 max-w-md">
+                <audio controls src={item.dataUrl} className="w-full h-9" />
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="flex items-center justify-end gap-2 shrink-0 px-4 sm:pl-5 pb-4 sm:pb-5">
+          <ItemActions
+            item={item}
+            size="md"
+            openLabel="פתח"
+            onOpen={() => onSelectItem(item)}
+            onEdit={() => onEditItem(item)}
+            onDelete={() => onDeleteItem(item.id)}
+          />
+          <button
+            type="button"
+            onClick={() => onToggleFavorite(item)}
+            aria-label={item.favorite ? `הסרת ${item.title} מהמועדפים` : `הוספת ${item.title} למועדפים`}
+            className="w-11 h-11 flex items-center justify-center rounded-xl glass transition cursor-pointer shrink-0"
+          >
+            <Star
+              className={cn(
+                'w-[18px] h-[18px] transition',
+                item.favorite
+                  ? 'fill-amber-400 text-amber-400'
+                  : 'text-slate-400 hover:text-amber-500'
+              )}
+            />
+          </button>
+        </div>
+      </article>
+    );
+  };
+
+  // Search across all modules → grouped results with module headers.
+  if (activeTab === 'all' && searchQuery.trim()) {
+    const groups = ALL_MODULES.map((moduleId) => ({
+      moduleId,
+      rows: items.filter((item) => item.module === moduleId),
+    })).filter((g) => g.rows.length > 0);
+
+    if (groups.length === 0) return <div className="space-y-4" />;
+
+    return (
+      <div className="space-y-5">
+        {groups.map((group) => (
+          <section key={group.moduleId} aria-label={MODULE_META[group.moduleId].label}>
+            <h3 className="text-sm font-bold text-slate-500 mb-2 flex items-center gap-2">
+              {MODULE_META[group.moduleId].label}
+              <span className="font-mono text-xs bg-slate-900/[0.05] border border-slate-900/[0.08] rounded-md px-1.5 py-0.5">
+                {group.rows.length}
+              </span>
+            </h3>
+            <div className="space-y-3">{group.rows.map(renderRow)}</div>
+          </section>
+        ))}
       </div>
-    </div>
-  );
+    );
+  }
+
+  return <div className="space-y-4">{renderFoldersSection()}<div className="space-y-3">{items.map(renderRow)}</div></div>;
 }

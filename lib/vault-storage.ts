@@ -8,6 +8,7 @@ import {
   isModuleType,
   isVaultItemSource,
   normalizeTags,
+  normalizeExpiryDate,
 } from './vault-logic';
 
 /**
@@ -339,6 +340,9 @@ interface CloudItemDoc {
   folderId?: string;
   folderName?: string;
   tags?: string[];
+  favorite?: boolean;
+  expiresAt?: string;
+  deletedAt?: string | null;
   createdAtIso: string;
   formattedDate?: string;
   formattedTime?: string;
@@ -369,6 +373,9 @@ function mapCloudItem(d: CloudItemDoc): VaultItem {
     folderId: d.folderId || '',
     folderName: d.folderName || '',
     tags: normalizeTags(d.tags),
+    favorite: d.favorite === true,
+    expiresAt: normalizeExpiryDate(d.expiresAt),
+    deletedAt: d.deletedAt || undefined,
     createdAt: iso,
     formattedDate: d.formattedDate || ts.formattedDate,
     formattedTime: d.formattedTime || ts.formattedTime,
@@ -407,6 +414,9 @@ export async function saveVaultItemToDatabase(
     folderId: item.folderId || '',
     folderName: item.folderName || '',
     tags: normalizeTags(item.tags),
+    favorite: Boolean(item.favorite),
+    expiresAt: normalizeExpiryDate(item.expiresAt),
+    deletedAt: item.deletedAt,
   };
 
   const updatedLocal = [
@@ -425,6 +435,9 @@ export async function saveVaultItemToDatabase(
         folderId: (normalizedItem.folderId || '').slice(0, 128),
         folderName: (normalizedItem.folderName || '').slice(0, 120),
         tags: normalizedItem.tags,
+        favorite: normalizedItem.favorite,
+        expiresAt: normalizedItem.expiresAt,
+        deletedAt: normalizedItem.deletedAt,
         createdAtIso: normalizedItem.createdAt.slice(0, 64),
         formattedDate: normalizedItem.formattedDate.slice(0, 32),
         formattedTime: normalizedItem.formattedTime.slice(0, 32),
@@ -460,6 +473,8 @@ export async function updateVaultItemInDatabase(
   const cleanFolderId = (updates.folderId || '').trim().slice(0, 128);
   const cleanFolderName = (updates.folderName || '').trim().slice(0, 120);
   const cleanTags = normalizeTags(updates.tags);
+  const cleanFavorite = updates.favorite === true;
+  const cleanExpiresAt = normalizeExpiryDate(updates.expiresAt);
 
   const updatedLocal = currentItems.map((item) =>
     item.id === id
@@ -470,6 +485,8 @@ export async function updateVaultItemInDatabase(
           folderId: cleanFolderId,
           folderName: cleanFolderName,
           tags: cleanTags,
+          favorite: cleanFavorite,
+          expiresAt: cleanExpiresAt,
           notes: updates.notes ? updates.notes.trim().slice(0, 1000) : undefined,
         }
       : item
@@ -485,6 +502,8 @@ export async function updateVaultItemInDatabase(
         folderId: cleanFolderId,
         folderName: cleanFolderName,
         tags: cleanTags,
+        favorite: cleanFavorite,
+        expiresAt: cleanExpiresAt,
         notes: (updates.notes || '').trim().slice(0, 1000),
       }),
     });
@@ -497,22 +516,53 @@ export async function updateVaultItemInDatabase(
 }
 
 /**
- * Deletes a VaultItem from the cloud AND local storage.
+ * Deletes a VaultItem — soft by default (recycle bin, restorable),
+ * permanent with {permanent: true}. Updates the cloud AND local storage.
  */
 export async function deleteVaultItemFromDatabase(
   id: string,
-  currentItems: VaultItem[]
+  currentItems: VaultItem[],
+  options?: { permanent?: boolean }
 ): Promise<VaultItem[]> {
-  const updatedLocal = currentItems.filter((item) => item.id !== id);
+  const permanent = options?.permanent === true;
+  const deletedAt = new Date().toISOString();
+  const updatedLocal = permanent
+    ? currentItems.filter((item) => item.id !== id)
+    : currentItems.map((item) => (item.id === id ? { ...item, deletedAt } : item));
   await saveLocalVaultItems(updatedLocal);
 
   try {
-    const cloud = await apiFetch(`/api/vault-items/${encodeURIComponent(id)}`, {
-      method: 'DELETE',
-    });
+    const cloud = await apiFetch(
+      `/api/vault-items/${encodeURIComponent(id)}${permanent ? '?permanent=1' : ''}`,
+      { method: 'DELETE' }
+    );
     void cloud;
   } catch (error) {
     reportCloudError('delete', `vault_items/${id}`, error);
+  }
+
+  return updatedLocal;
+}
+
+/**
+ * Restores a recycled VaultItem (cloud AND local).
+ */
+export async function restoreVaultItem(
+  id: string,
+  currentItems: VaultItem[]
+): Promise<VaultItem[]> {
+  const updatedLocal = currentItems.map((item) =>
+    item.id === id ? { ...item, deletedAt: undefined } : item
+  );
+  await saveLocalVaultItems(updatedLocal);
+
+  try {
+    const cloud = await apiFetch(`/api/vault-items/${encodeURIComponent(id)}/restore`, {
+      method: 'POST',
+    });
+    void cloud;
+  } catch (error) {
+    reportCloudError('restore', `vault_items/${id}`, error);
   }
 
   return updatedLocal;
@@ -631,6 +681,18 @@ async function mergeAndBackfill<T extends { id: string }>(
   if (!isStopped()) onChange(merged);
 }
 
+/** Live sync state surfaced by the header indicator. */
+export interface VaultSyncState {
+  lastSyncedAt: Date | null;
+  syncing: boolean;
+}
+
+/** Unsubscribe handle with a manual "sync now" trigger. */
+export interface VaultSyncHandle {
+  (): void;
+  syncNow: () => void;
+}
+
 /**
  * Keeps the signed-in user's vault in sync with the cloud: initial pull,
  * backfill of any local-only docs up to the cloud, then a poll every
@@ -641,11 +703,15 @@ export function subscribeToUserVault(
   callbacks: {
     onItemsChange: (items: VaultItem[]) => void;
     onFoldersChange: (folders: Folder[]) => void;
+    onSyncStateChange?: (state: VaultSyncState) => void;
   }
-): () => void {
+): VaultSyncHandle {
   void ownerId; // routing happens server-side via the session cookie
   let stopped = false;
   let syncing = false;
+  let lastSyncedAt: Date | null = null;
+
+  const reportState = () => callbacks.onSyncStateChange?.({ lastSyncedAt, syncing });
 
   const syncItems = () =>
     mergeAndBackfill(
@@ -678,15 +744,18 @@ export function subscribeToUserVault(
     );
 
   const syncAll = async (): Promise<void> => {
-    if (syncing) return;
+    if (syncing || stopped) return;
     syncing = true;
+    reportState();
     try {
       await Promise.all([
         syncItems().catch((err) => console.error('vault items sync failed:', err)),
         syncFolders().catch((err) => console.error('folders sync failed:', err)),
       ]);
+      lastSyncedAt = new Date();
     } finally {
       syncing = false;
+      reportState();
     }
   };
 
@@ -707,7 +776,7 @@ export function subscribeToUserVault(
     window.addEventListener('focus', onWake);
   }
 
-  return () => {
+  const handle = () => {
     stopped = true;
     if (pollTimer) clearInterval(pollTimer);
     if (typeof document !== 'undefined') {
@@ -717,6 +786,8 @@ export function subscribeToUserVault(
       window.removeEventListener('focus', onWake);
     }
   };
+  handle.syncNow = () => void syncAll();
+  return handle;
 }
 
 /* ------------------------------------------------------------------ */

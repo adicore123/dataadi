@@ -7,7 +7,7 @@ export const dynamic = 'force-dynamic';
 
 type RouteContext = { params: Promise<{ id: string }> };
 
-/** PATCH /api/vault-items/[id] — title/module/album/notes only. */
+/** PATCH /api/vault-items/[id] — title/module/folder/tags/favorite/expiry/notes. */
 export async function PATCH(request: NextRequest, context: RouteContext) {
   const email = await requireUser();
   if (!email) return jsonError('נדרשת התחברות', 401);
@@ -34,8 +34,11 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
   }
 }
 
-/** DELETE /api/vault-items/[id] — idempotent, owner-scoped. */
-export async function DELETE(_request: NextRequest, context: RouteContext) {
+/**
+ * DELETE /api/vault-items/[id] — soft-delete into the recycle bin.
+ * `?permanent=1` deletes for real (used from the trash screen).
+ */
+export async function DELETE(request: NextRequest, context: RouteContext) {
   const email = await requireUser();
   if (!email) return jsonError('נדרשת התחברות', 401);
   const { id } = await context.params;
@@ -44,7 +47,14 @@ export async function DELETE(_request: NextRequest, context: RouteContext) {
   }
   try {
     const itemsCol = await getVaultItemsCollection();
-    await itemsCol.deleteOne({ _id: id, ownerId: email });
+    if (request.nextUrl.searchParams.get('permanent') === '1') {
+      await itemsCol.deleteOne({ _id: id, ownerId: email });
+    } else {
+      await itemsCol.updateOne(
+        { _id: id, ownerId: email },
+        { $set: { deletedAt: new Date().toISOString(), updatedAt: new Date() } }
+      );
+    }
     return jsonOk();
   } catch (error) {
     return serverError('vault-items DELETE', error);

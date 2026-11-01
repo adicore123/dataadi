@@ -26,6 +26,9 @@ export interface VaultItemRecord {
   albumId?: string;
   albumName?: string;
   tags?: string[];
+  favorite?: boolean;
+  expiresAt?: string;
+  deletedAt?: string | null;
   createdAtIso: string;
   formattedDate: string;
   formattedTime: string;

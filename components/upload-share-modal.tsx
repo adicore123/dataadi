@@ -7,6 +7,8 @@ import {
   Square,
   AlertCircle,
   FolderCheck,
+  CalendarClock,
+  Sparkles,
 } from 'lucide-react';
 import {
   ModuleType,
@@ -17,6 +19,7 @@ import {
   formatDuration,
   CreateVaultItemInput,
 } from '@/lib/vault-logic';
+import { suggestTags } from '@/lib/tag-suggestions';
 import { ModalShell } from '@/components/ui/modal-shell';
 import { FolderPicker } from '@/components/ui/folder-picker';
 import { ModuleRadioGroup } from '@/components/ui/module-radio-group';
@@ -78,6 +81,7 @@ export function UploadShareModal({
 
   const [title, setTitle] = useState('');
   const [tags, setTags] = useState<string[]>([]);
+  const [expiresAt, setExpiresAt] = useState('');
   const [fileName, setFileName] = useState('');
   const [fileSize, setFileSize] = useState(0);
   const [mimeType, setMimeType] = useState(DEFAULT_MIME[defaultModule]);
@@ -115,6 +119,7 @@ export function UploadShareModal({
     setAutoDestinationResolved(destinationMode !== 'auto');
     setNewFolderName('');
     setTags([]);
+    setExpiresAt('');
 
     const initialFolderId =
       incomingShareDraft?.suggestedFolderId ||
@@ -363,6 +368,7 @@ export function UploadShareModal({
         folderId: targetFolderId || undefined,
         folderName: targetFolderName || undefined,
         tags,
+        expiresAt: expiresAt || undefined,
         fileName: finalFileName,
         fileSize: finalSize,
         mimeType,
@@ -580,6 +586,51 @@ export function UploadShareModal({
           </div>
 
           <TagsInput tags={tags} onChange={setTags} inputId="upload-item-tags" />
+
+          {/* Auto-suggested tags from the file name (one-tap add). */}
+          {(() => {
+            const suggestions = suggestTags(
+              title,
+              fileName,
+              selectedModule || defaultModule
+            ).filter((tag) => !tags.includes(tag));
+            if (suggestions.length === 0) return null;
+            return (
+              <div className="flex flex-wrap items-center gap-2 -mt-1">
+                <span className="text-xs font-bold text-slate-500 flex items-center gap-1">
+                  <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                  מוצע:
+                </span>
+                {suggestions.map((tag) => (
+                  <button
+                    key={tag}
+                    type="button"
+                    onClick={() => setTags([...tags, tag])}
+                    className="min-h-8 px-2.5 rounded-lg bg-mint-500/10 border border-mint-500/25 text-xs font-bold text-mint-700 hover:bg-mint-500/20 transition cursor-pointer"
+                  >
+                    + {tag}
+                  </button>
+                ))}
+              </div>
+            );
+          })()}
+
+          <div className="space-y-2">
+            <label
+              htmlFor="upload-item-expiry"
+              className="flex items-center gap-1.5 text-sm font-bold text-slate-700"
+            >
+              <CalendarClock className="w-3.5 h-3.5 text-amber-600" />
+              תאריך תוקף (אופציונלי — דרכון, רישיון, ביטוח...)
+            </label>
+            <input
+              id="upload-item-expiry"
+              type="date"
+              value={expiresAt}
+              onChange={(e) => setExpiresAt(e.target.value)}
+              className="input-glass w-full"
+            />
+          </div>
         </div>
 
         {errorMsg && (

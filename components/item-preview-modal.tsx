@@ -11,6 +11,8 @@ import {
   Edit3,
   Folder as FolderIcon,
   Tag,
+  Star,
+  CalendarClock,
 } from 'lucide-react';
 import {
   VaultItem,
@@ -36,6 +38,7 @@ interface ItemPreviewModalProps {
   onClose: () => void;
   onCreateFolder: (name: string, module: ModuleType) => Promise<Folder>;
   onUpdateItem: (id: string, updates: VaultItemUpdates) => void;
+  onToggleFavorite: (item: VaultItem) => void;
   onDeleteItem: (id: string) => void;
 }
 
@@ -46,6 +49,7 @@ export function ItemPreviewModal({
   onClose,
   onCreateFolder,
   onUpdateItem,
+  onToggleFavorite,
   onDeleteItem,
 }: ItemPreviewModalProps) {
   const [isEditing, setIsEditing] = useState(false);
@@ -54,6 +58,7 @@ export function ItemPreviewModal({
   const [editFolderId, setEditFolderId] = useState('');
   const [newFolderName, setNewFolderName] = useState('');
   const [editTags, setEditTags] = useState<string[]>([]);
+  const [editExpiresAt, setEditExpiresAt] = useState('');
   const [editNotes, setEditNotes] = useState('');
 
   useEffect(() => {
@@ -64,6 +69,7 @@ export function ItemPreviewModal({
       setEditFolderId(item.folderId || '');
       setNewFolderName('');
       setEditTags(item.tags ? [...item.tags] : []);
+      setEditExpiresAt(item.expiresAt || '');
       setEditNotes(item.notes || '');
     }
   }, [item, initialEditing]);
@@ -94,6 +100,8 @@ export function ItemPreviewModal({
       folderId: finalFolderId,
       folderName: finalFolderName,
       tags: editTags,
+      favorite: Boolean(item.favorite),
+      expiresAt: editExpiresAt || undefined,
       notes: editNotes.trim() || undefined,
     });
     setIsEditing(false);
@@ -127,6 +135,12 @@ export function ItemPreviewModal({
             {tag}
           </span>
         ))}
+      {item.expiresAt && (
+        <span className="font-bold text-amber-700 rounded-md bg-amber-400/15 border border-amber-500/30 px-1.5 py-0.5 inline-flex items-center gap-1">
+          <CalendarClock className="w-3 h-3" />
+          תוקף: {item.expiresAt}
+        </span>
+      )}
       <span dir="ltr" className="font-mono">
         {item.formattedDate} · {item.formattedTime}
       </span>
@@ -157,6 +171,21 @@ export function ItemPreviewModal({
             >
               <Edit3 className="w-3.5 h-3.5 text-mint-600" />
               <span>ערוך כותרת / מודול / תיקייה</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => onToggleFavorite(item)}
+              aria-label={item.favorite ? `הסרת ${item.title} מהמועדפים` : `הוספת ${item.title} למועדפים`}
+              aria-pressed={Boolean(item.favorite)}
+              className={
+                item.favorite
+                  ? 'min-h-10 py-2 px-3.5 rounded-xl bg-amber-400/20 border border-amber-500/40 text-xs font-bold text-amber-700 active:scale-95 transition flex items-center gap-1.5 cursor-pointer whitespace-nowrap'
+                  : 'min-h-10 py-2 px-3.5 rounded-xl glass text-xs font-semibold text-slate-700 hover:bg-slate-900/5 active:scale-95 transition flex items-center gap-1.5 cursor-pointer whitespace-nowrap'
+              }
+            >
+              <Star className={'w-3.5 h-3.5' + (item.favorite ? ' fill-amber-500 text-amber-500' : ' text-amber-500')} />
+              <span>{item.favorite ? 'במועדפים' : 'הוסף למועדפים'}</span>
             </button>
 
             {item.dataUrl && (
@@ -255,6 +284,22 @@ export function ItemPreviewModal({
               )}
             </div>
           )}
+          {/* Real PDF viewer — the browser renders the data URL natively. */}
+          {item.dataUrl && item.dataUrl.startsWith('data:application/pdf') && (
+            <object
+              data={item.dataUrl}
+              type="application/pdf"
+              aria-label={`תצוגת ${item.fileName}`}
+              className="w-full h-[70vh] rounded-2xl border border-slate-900/[0.08] bg-white"
+            >
+              <div className="p-4 text-center text-sm text-slate-500">
+                הדפדפן לא תומך בתצוגת PDF מוטמעת —
+                <a href={item.dataUrl} download={item.fileName} className="text-mint-700 font-bold underline">
+                  הורד/י את הקובץ
+                </a>
+              </div>
+            </object>
+          )}
         </div>
       )}
 
@@ -323,6 +368,23 @@ export function ItemPreviewModal({
           />
 
           <TagsInput tags={editTags} onChange={setEditTags} inputId="edit-item-tags" compact />
+
+          <div>
+            <label
+              htmlFor="edit-item-expiry"
+              className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-1.5"
+            >
+              <CalendarClock className="w-3.5 h-3.5 text-amber-600" />
+              תאריך תוקף (אופציונלי — דרכון, רישיון, ביטוח...):
+            </label>
+            <input
+              id="edit-item-expiry"
+              type="date"
+              value={editExpiresAt}
+              onChange={(e) => setEditExpiresAt(e.target.value)}
+              className="input-glass w-full"
+            />
+          </div>
 
           <div>
             <label

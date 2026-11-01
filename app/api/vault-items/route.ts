@@ -5,14 +5,31 @@ import { requireUser, jsonError, jsonOk, serverError, parseJsonBody } from '@/li
 
 export const dynamic = 'force-dynamic';
 
-/** GET /api/vault-items — every item owned by the signed-in user. */
-export async function GET() {
+/** Recycled items older than this are purged on sight (lazy GC). */
+const TRASH_RETENTION_DAYS = 30;
+
+/**
+ * GET /api/vault-items — every item owned by the signed-in user.
+ * `?trash=1` returns only recycled items (and purges stale ones first).
+ */
+export async function GET(request: NextRequest) {
   const email = await requireUser();
   if (!email) return jsonError('נדרשת התחברות', 401);
   try {
     const itemsCol = await getVaultItemsCollection();
+    const trash = request.nextUrl.searchParams.get('trash') === '1';
+
+    if (trash) {
+      // ISO strings compare lexicographically — same ordering as dates.
+      const cutoff = new Date(Date.now() - TRASH_RETENTION_DAYS * 86_400_000).toISOString();
+      await itemsCol.deleteMany({ ownerId: email, deletedAt: { $lt: cutoff } });
+    }
+
+    const query: Record<string, unknown> = { ownerId: email };
+    query.deletedAt = trash ? { $type: 'string', $ne: '' } : null;
+
     const docs = await itemsCol
-      .find({ ownerId: email })
+      .find(query)
       .sort({ createdAtIso: -1 })
       .toArray();
     const items = docs.map((doc) => ({
@@ -24,6 +41,9 @@ export async function GET() {
       folderId: doc.folderId ?? doc.albumId ?? '',
       folderName: doc.folderName ?? doc.albumName ?? '',
       tags: doc.tags ?? [],
+      favorite: doc.favorite === true,
+      expiresAt: doc.expiresAt,
+      deletedAt: doc.deletedAt,
       createdAtIso: doc.createdAtIso,
       formattedDate: doc.formattedDate,
       formattedTime: doc.formattedTime,

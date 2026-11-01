@@ -9,6 +9,9 @@ export interface VaultItemUpdates {
   folderName?: string;
   tags?: string[];
   notes?: string;
+  favorite?: boolean;
+  /** ISO date (yyyy-mm-dd also accepted) — when the document expires. */
+  expiresAt?: string;
 }
 
 /** A folder inside one module (documents / photos / recordings). */
@@ -27,6 +30,11 @@ export interface VaultItem {
   folderId?: string;
   folderName?: string;
   tags?: string[];
+  favorite?: boolean;
+  /** ISO date string — when the document expires (passport, license…). */
+  expiresAt?: string;
+  /** Set while the item sits in the recycle bin (30-day retention). */
+  deletedAt?: string;
   createdAt: string; // ISO string
   formattedDate: string; // DD.MM.YYYY
   formattedTime: string; // HH:MM
@@ -45,6 +53,8 @@ export interface CreateVaultItemInput {
   folderId?: string;
   folderName?: string;
   tags?: string[];
+  favorite?: boolean;
+  expiresAt?: string;
   fileName: string;
   fileSize: number;
   mimeType: string;
@@ -135,6 +145,47 @@ export function parseTagsInput(input: string): string[] {
 export function normalizeTags(tags: unknown): string[] {
   if (!Array.isArray(tags)) return [];
   return parseTagsInput(tags.filter((t): t is string => typeof t === 'string').join(','));
+}
+
+/**
+ * Normalizes an expiry date to an ISO yyyy-mm-dd string (or undefined).
+ * Accepts full ISO strings and plain dates; invalid → undefined.
+ */
+export function normalizeExpiryDate(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const date = new Date(value.length === 10 ? `${value}T00:00:00` : value);
+  if (Number.isNaN(date.getTime())) return undefined;
+  const day = String(date.getDate()).padStart(2, '0');
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  return `${date.getFullYear()}-${month}-${day}`;
+}
+
+export interface ExpiryAlert {
+  item: VaultItem;
+  daysLeft: number;
+  level: 'expired' | 'week' | 'month';
+}
+
+/**
+ * Collects expiring documents (non-deleted) sorted by urgency — feeds
+ * the home banner and reminders.
+ */
+export function computeExpiryAlerts(items: VaultItem[], now = new Date()): ExpiryAlert[] {
+  const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const alerts: ExpiryAlert[] = [];
+  for (const item of items) {
+    if (item.deletedAt || !item.expiresAt) continue;
+    const expiry = new Date(`${normalizeExpiryDate(item.expiresAt)}T00:00:00`);
+    if (Number.isNaN(expiry.getTime())) continue;
+    const daysLeft = Math.round((expiry.getTime() - startOfDay.getTime()) / 86_400_000);
+    if (daysLeft > 30) continue;
+    alerts.push({
+      item,
+      daysLeft,
+      level: daysLeft < 0 ? 'expired' : daysLeft <= 7 ? 'week' : 'month',
+    });
+  }
+  return alerts.sort((a, b) => a.daysLeft - b.daysLeft);
 }
 
 /* ------------------------------------------------------------------ */
@@ -267,6 +318,8 @@ export function createVaultItem(
     folderId: input.folderId ? input.folderId.trim().slice(0, 128) : '',
     folderName: input.folderName ? input.folderName.trim().slice(0, 120) : '',
     tags: normalizeTags(input.tags),
+    favorite: Boolean(input.favorite),
+    expiresAt: normalizeExpiryDate(input.expiresAt),
     createdAt: nowIso,
     formattedDate: formatTimestampHe(nowIso).formattedDate,
     formattedTime: formatTimestampHe(nowIso).formattedTime,
@@ -284,28 +337,45 @@ export function createVaultItem(
 /* Filtering & counts                                                  */
 /* ------------------------------------------------------------------ */
 
+export type SortMode = 'newest' | 'oldest' | 'name' | 'size';
+
 /**
  * Filters and sorts vault items by module, optional folder ID (any
- * module), free-text search query (title, file, notes, folder, tags,
- * dates), and chronological order.
+ * module), optional tag, free-text search query (title, file, notes,
+ * folder, tags, dates) and sort order. Favorites always float first;
+ * recycled items are excluded unless asked for (trash view).
  */
 export function filterAndSortItems(
   items: VaultItem[],
   options: {
     moduleFilter: FilterTab;
     folderFilter?: string; // 'all' or specific folderId
+    tagFilter?: string; // 'all' or a tag
     searchQuery: string;
-    sortOrder?: 'newest' | 'oldest';
+    sortOrder?: SortMode;
+    deleted?: 'exclude' | 'only'; // default 'exclude'
   }
 ): VaultItem[] {
-  const { moduleFilter, folderFilter = 'all', searchQuery, sortOrder = 'newest' } = options;
+  const {
+    moduleFilter,
+    folderFilter = 'all',
+    tagFilter = 'all',
+    searchQuery,
+    sortOrder = 'newest',
+    deleted = 'exclude',
+  } = options;
   const normalizedQuery = (searchQuery || '').trim().toLowerCase();
 
   const filtered = items.filter((item) => {
+    if (deleted === 'only' && !item.deletedAt) return false;
+    if (deleted === 'exclude' && item.deletedAt) return false;
     if (moduleFilter !== 'all' && item.module !== moduleFilter) {
       return false;
     }
     if (folderFilter && folderFilter !== 'all' && item.folderId !== folderFilter) {
+      return false;
+    }
+    if (tagFilter !== 'all' && !(item.tags || []).includes(tagFilter)) {
       return false;
     }
     if (!normalizedQuery) return true;
@@ -326,11 +396,33 @@ export function filterAndSortItems(
     return haystack.includes(normalizedQuery);
   });
 
+  const comparators: Record<SortMode, (a: VaultItem, b: VaultItem) => number> = {
+    newest: (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+    oldest: (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+    name: (a, b) => a.title.localeCompare(b.title, 'he'),
+    size: (a, b) => b.fileSize - a.fileSize,
+  };
+
   return filtered.sort((a, b) => {
-    const timeA = new Date(a.createdAt).getTime();
-    const timeB = new Date(b.createdAt).getTime();
-    return sortOrder === 'oldest' ? timeA - timeB : timeB - timeA;
+    // Favorites always float to the top within any sort order.
+    const favDelta = Number(Boolean(b.favorite)) - Number(Boolean(a.favorite));
+    if (favDelta !== 0) return favDelta;
+    return comparators[sortOrder](a, b);
   });
+}
+
+/** Every distinct tag among the (non-deleted) items, sorted by usage. */
+export function collectTags(items: VaultItem[]): Array<{ tag: string; count: number }> {
+  const counts = new Map<string, number>();
+  for (const item of items) {
+    if (item.deletedAt) continue;
+    for (const tag of item.tags || []) {
+      counts.set(tag, (counts.get(tag) || 0) + 1);
+    }
+  }
+  return [...counts.entries()]
+    .map(([tag, count]) => ({ tag, count }))
+    .sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag, 'he'));
 }
 
 /**

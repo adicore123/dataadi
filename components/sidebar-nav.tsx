@@ -18,6 +18,7 @@ import {
 import { FilterTab, Folder, ModuleType } from '@/lib/vault-logic';
 import { UploadMode } from '@/components/upload-share-modal';
 import { cn } from '@/lib/utils';
+import { Trash2 } from 'lucide-react';
 
 interface SidebarNavProps {
   activeTab: FilterTab;
@@ -27,6 +28,9 @@ interface SidebarNavProps {
   selectedFolderId: string;
   folderCounts: Record<string, number>;
   onSelectFolder: (folderId: string) => void;
+  trashCount: number;
+  viewTrash: boolean;
+  onOpenTrash: () => void;
   userEmail?: string | null;
   onSignIn: () => void;
   onSignOut: () => void;
@@ -48,6 +52,9 @@ export function SidebarNav({
   selectedFolderId,
   folderCounts,
   onSelectFolder,
+  trashCount,
+  viewTrash,
+  onOpenTrash,
   userEmail,
   onSignIn,
   onSignOut,
@@ -224,6 +231,34 @@ export function SidebarNav({
           );
         })}
       </nav>
+
+      {/* Recycle bin entry */}
+      <div className="px-3 pb-2 border-t border-slate-900/[0.06]">
+        <button
+          type="button"
+          onClick={() => {
+            onOpenTrash();
+            if (isMobileDrawer) onCloseMobileDrawer();
+          }}
+          aria-current={viewTrash ? 'page' : undefined}
+          className={cn(
+            'w-full min-h-11 px-4 py-2 rounded-xl flex items-center justify-between text-sm transition-colors cursor-pointer border',
+            viewTrash
+              ? 'bg-slate-900/[0.06] border-slate-900/[0.1] text-slate-800 font-bold'
+              : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-900/[0.04]'
+          )}
+        >
+          <span className="flex items-center gap-2.5">
+            <Trash2 className="w-4 h-4 shrink-0" />
+            <span>סל מיחזור</span>
+          </span>
+          {trashCount > 0 && (
+            <span className="font-mono text-xs rounded-lg bg-slate-900/[0.06] px-2 py-0.5">
+              {trashCount}
+            </span>
+          )}
+        </button>
+      </div>
 
       {/* Footer: account + PWA */}
       <div className="p-4 border-t border-slate-900/[0.08] space-y-2 pb-safe">

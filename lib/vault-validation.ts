@@ -1,4 +1,4 @@
-import { ModuleType, normalizeTags } from './vault-logic';
+import { ModuleType, normalizeTags, normalizeExpiryDate } from './vault-logic';
 
 /**
  * Server-side payload validation for the vault API routes.
@@ -19,6 +19,10 @@ export interface VaultItemDoc {
   folderId: string;
   folderName: string;
   tags: string[];
+  favorite: boolean;
+  expiresAt?: string;
+  /** ISO string while the item sits in the recycle bin. */
+  deletedAt?: string;
   createdAtIso: string;
   formattedDate: string;
   formattedTime: string;
@@ -38,6 +42,8 @@ export interface VaultItemUpdateDoc {
   folderName: string;
   tags: string[];
   notes: string;
+  favorite: boolean;
+  expiresAt?: string;
 }
 
 export interface FolderDoc {
@@ -89,6 +95,9 @@ export function parseVaultItemCreate(body: unknown): { id: string; doc: VaultIte
       folderId: clampStr(b.folderId, 128),
       folderName: clampStr(b.folderName, 120),
       tags: normalizeTags(b.tags),
+      favorite: b.favorite === true,
+      expiresAt: normalizeExpiryDate(b.expiresAt),
+      deletedAt: clampStr(b.deletedAt, 64) || undefined,
       createdAtIso: clampStr(b.createdAtIso, 64, new Date().toISOString()),
       formattedDate: clampStr(b.formattedDate, 32),
       formattedTime: clampStr(b.formattedTime, 32),
@@ -114,6 +123,8 @@ export function parseVaultItemUpdate(body: unknown): VaultItemUpdateDoc | { erro
     folderName: clampStr(b.folderName, 120),
     tags: normalizeTags(b.tags),
     notes: clampStr(b.notes, 1000),
+    favorite: b.favorite === true,
+    expiresAt: normalizeExpiryDate(b.expiresAt),
   };
 }
 

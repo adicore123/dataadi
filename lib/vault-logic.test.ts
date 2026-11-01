@@ -10,9 +10,13 @@ import {
   filterAndSortItems,
   computeModuleCounts,
   computeFolderCounts,
+  computeExpiryAlerts,
+  normalizeExpiryDate,
   parseTagsInput,
   normalizeTags,
+  collectTags,
 } from './vault-logic.ts';
+import { suggestTags } from './tag-suggestions.ts';
 
 test('detectModuleFromMime routes images, audio, and documents accurately', () => {
   assert.equal(detectModuleFromMime('image/jpeg', 'photo.jpg'), 'photos');
@@ -154,4 +158,88 @@ test('formatFileSizeHe and formatDuration format numbers cleanly', () => {
   assert.equal(formatFileSizeHe(512), '512 B');
   assert.equal(formatFileSizeHe(2048), '2.0 KB');
   assert.equal(formatDuration(65), '01:05');
+});
+
+test('normalizeExpiryDate accepts dates and rejects garbage', () => {
+  assert.equal(normalizeExpiryDate('2027-03-15'), '2027-03-15');
+  assert.equal(normalizeExpiryDate('2027-03-15T10:00:00.000Z'), '2027-03-15');
+  assert.equal(normalizeExpiryDate('לא תאריך'), undefined);
+  assert.equal(normalizeExpiryDate(42), undefined);
+});
+
+test('computeExpiryAlerts flags urgency levels and skips far dates', () => {
+  const mk = (id: string, expiresAt?: string) =>
+    createVaultItem(
+      { title: id, module: 'documents', expiresAt, fileName: 'x.pdf', fileSize: 1, mimeType: 'application/pdf' },
+      '2026-10-01T09:00:00'
+    );
+  const now = new Date('2026-11-01T12:00:00');
+  const alerts = computeExpiryAlerts(
+    [mk('expired', '2026-10-20'), mk('week', '2026-11-05'), mk('month', '2026-11-25'), mk('far', '2027-06-01'), mk('none')],
+    now
+  );
+  assert.deepEqual(
+    alerts.map((a) => [a.item.title, a.level]),
+    [['expired', 'expired'], ['week', 'week'], ['month', 'month']]
+  );
+  assert.equal(alerts[0].daysLeft, -12);
+});
+
+test('filterAndSortItems: favorites first, tag filter, sort modes, trash', () => {
+  const fav = createVaultItem(
+    { title: 'אהוב ישן', module: 'documents', favorite: true, tags: ['חשוב'], fileName: 'a.pdf', fileSize: 10, mimeType: 'application/pdf' },
+    '2026-10-01T09:00:00'
+  );
+  const plain = createVaultItem(
+    { title: 'רגיל חדש', module: 'documents', tags: ['עבודה'], fileName: 'b.pdf', fileSize: 900, mimeType: 'application/pdf' },
+    '2026-10-20T09:00:00'
+  );
+  const trashed = { ...fav, id: 'item_trashed', deletedAt: '2026-10-30T00:00:00.000Z' };
+  const all = [fav, plain, trashed];
+
+  // Trash excluded by default, only with deleted:'only'.
+  assert.equal(filterAndSortItems(all, { moduleFilter: 'all', searchQuery: '' }).length, 2);
+  const trashOnly = filterAndSortItems(all, { moduleFilter: 'all', searchQuery: '', deleted: 'only' });
+  assert.equal(trashOnly.length, 1);
+  assert.equal(trashOnly[0].deletedAt, '2026-10-30T00:00:00.000Z');
+
+  // Favorites float first even when newer items exist.
+  const newest = filterAndSortItems(all, { moduleFilter: 'all', searchQuery: '' });
+  assert.equal(newest[0].title, 'אהוב ישן');
+
+  // Tag filter.
+  assert.equal(
+    filterAndSortItems(all, { moduleFilter: 'all', tagFilter: 'עבודה', searchQuery: '' }).length,
+    1
+  );
+
+  // Sort modes — favorites still float first, so compare within the pair
+  // of non-favorite items (sizes 900 vs 5).
+  const small = createVaultItem(
+    { title: 'קטן', module: 'documents', fileName: 'c.pdf', fileSize: 5, mimeType: 'application/pdf' },
+    '2026-10-10T09:00:00'
+  );
+  const bySize = filterAndSortItems([plain, small], { moduleFilter: 'all', searchQuery: '', sortOrder: 'size' });
+  assert.deepEqual(bySize.map((i) => i.title), ['רגיל חדש', 'קטן']);
+  assert.equal(
+    filterAndSortItems(all, { moduleFilter: 'all', searchQuery: '', sortOrder: 'oldest' })[0].title,
+    'אהוב ישן'
+  );
+});
+
+test('collectTags counts and orders tags across items', () => {
+  const a = createVaultItem({ title: 'a', module: 'documents', tags: ['חשוב', 'עבודה'], fileName: 'a.pdf', fileSize: 1, mimeType: 'application/pdf' }, '2026-10-01T09:00:00');
+  const b = createVaultItem({ title: 'b', module: 'documents', tags: ['חשוב'], fileName: 'b.pdf', fileSize: 1, mimeType: 'application/pdf' }, '2026-10-02T09:00:00');
+  const tags = collectTags([a, b, { ...b, id: 'x', deletedAt: '2026-10-03T00:00:00.000Z' }]);
+  assert.deepEqual(tags, [
+    { tag: 'חשוב', count: 2 },
+    { tag: 'עבודה', count: 1 },
+  ]);
+});
+
+test('suggestTags matches Hebrew keyword families', () => {
+  assert.deepEqual(suggestTags('קבלה מבנק לאומי', 'receipt-123.pdf', 'documents'), ['קבלות', 'בנק']);
+  assert.deepEqual(suggestTags('דרכון סריקה', 'passport.pdf', 'documents'), ['תעודות']);
+  assert.deepEqual(suggestTags('תמונת משפחה', 'fam.jpg', 'photos'), ['משפחה']);
+  assert.deepEqual(suggestTags('קובץ רנדומלי', 'xyz.bin', 'documents'), []);
 });
